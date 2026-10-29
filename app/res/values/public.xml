@@ -2008,12 +2008,8 @@
     <public type="raw" name="dpad_7_low" id="0x7f0e0011" />
     <public type="raw" name="dpad_8" id="0x7f0e0012" />
     <public type="raw" name="dpad_8_low" id="0x7f0e0013" />
-    <public type="raw" name="drastic_readme" id="0x7f0e0014" />
     <public type="raw" name="ffwd_tex" id="0x7f0e0015" />
     <public type="raw" name="fps" id="0x7f0e0016" />
-    <public type="raw" name="help_about" id="0x7f0e0017" />
-    <public type="raw" name="help_changelog" id="0x7f0e0018" />
-    <public type="raw" name="help_faq" id="0x7f0e0019" />
     <public type="raw" name="hinge_screen" id="0x7f0e001a" />
     <public type="raw" name="hinge_screen_low" id="0x7f0e001b" />
     <public type="raw" name="hinge_screen_tv" id="0x7f0e001c" />
