@@ -41,6 +41,7 @@
                 <data android:host="*"/>
             </intent-filter>
         </activity>
+        <activity android:configChanges="keyboardHidden|orientation|screenSize" android:name="com.dsemu.drastic.LoadingActivity" android:theme="@android:style/Theme.NoTitleBar.Fullscreen"/>
         <activity android:name="com.dsemu.drastic.ui.RomSelector"/>
         <activity android:name="com.dsemu.drastic.ui.IconCacheActivity" android:theme="@style/AppTheme.Transparent"/>
         <activity android:name="com.dsemu.drastic.ui.SystemMigrationActivity" android:theme="@style/AppTheme.Transparent"/>
