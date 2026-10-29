@@ -39,28 +39,7 @@
 
 # virtual methods
 .method public onClick(Landroid/view/View;)V
-    .locals 2
+    .locals 0
 
-    iget-object p1, p0, Lcom/dsemu/drastic/DraSticActivity$b;->f:Lcom/dsemu/drastic/DraSticActivity;
-
-    invoke-static {p1}, Lcom/dsemu/drastic/DraSticActivity;->M(Lcom/dsemu/drastic/DraSticActivity;)Z
-
-    move-result p1
-
-    if-eqz p1, :cond_0
-
-    new-instance p1, Landroid/content/Intent;
-
-    iget-object v0, p0, Lcom/dsemu/drastic/DraSticActivity$b;->e:Landroid/app/Activity;
-
-    const-class v1, Lcom/dsemu/drastic/ui/Help;
-
-    invoke-direct {p1, v0, v1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
-
-    iget-object v0, p0, Lcom/dsemu/drastic/DraSticActivity$b;->f:Lcom/dsemu/drastic/DraSticActivity;
-
-    invoke-virtual {v0, p1}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
-
-    :cond_0
     return-void
 .end method

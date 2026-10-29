@@ -2720,41 +2720,8 @@
 .end method
 
 .method public x()V
-    .locals 3
+    .locals 0
 
-    const/4 v0, 0x1
-
-    invoke-static {v0}, Lcom/dsemu/drastic/DraSticJNI;->pauseSystem(I)V
-
-    iget-object v1, p0, Lcom/dsemu/drastic/DraSticGlView;->j:Lo0/b;
-
-    iget-object v2, p0, Lcom/dsemu/drastic/DraSticGlView;->f:Landroid/content/Context;
-
-    invoke-virtual {v1, v2}, Lo0/b;->f(Landroid/content/Context;)V
-
-    iput-boolean v0, p0, Lcom/dsemu/drastic/DraSticGlView;->G:Z
-
-    iput-boolean v0, p0, Lcom/dsemu/drastic/DraSticGlView;->H:Z
-
-    iget-object v1, p0, Lcom/dsemu/drastic/DraSticGlView;->e:Lcom/dsemu/drastic/DraSticGlView$j;
-
-    invoke-virtual {v1}, Lcom/dsemu/drastic/DraSticGlView$j;->f()V
-
-    sget-boolean v1, Lf0/h;->e1:Z
-
-    if-nez v1, :cond_0
-
-    sput-boolean v0, Lf0/h;->e1:Z
-
-    iget-object v0, p0, Lcom/dsemu/drastic/DraSticGlView;->k:Lcom/dsemu/drastic/DraSticEmuActivity;
-
-    new-instance v1, Lcom/dsemu/drastic/DraSticGlView$c;
-
-    invoke-direct {v1, p0}, Lcom/dsemu/drastic/DraSticGlView$c;-><init>(Lcom/dsemu/drastic/DraSticGlView;)V
-
-    invoke-virtual {v0, v1}, Landroid/app/Activity;->runOnUiThread(Ljava/lang/Runnable;)V
-
-    :cond_0
     return-void
 .end method
 

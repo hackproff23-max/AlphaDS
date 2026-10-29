@@ -141,18 +141,6 @@
 
     if-nez p6, :cond_0
 
-    new-instance p2, Landroid/content/Intent;
-
-    const-class p4, Lcom/dsemu/drastic/ui/AddUser;
-
-    invoke-direct {p2, p1, p4}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
-
-    iget-object p1, p0, Lcom/dsemu/drastic/DraSticActivity$c;->f:Lcom/dsemu/drastic/DraSticActivity;
-
-    const/16 p4, 0x14
-
-    invoke-virtual {p1, p2, p4}, Landroid/app/Activity;->startActivityForResult(Landroid/content/Intent;I)V
-
     goto/16 :goto_1
 
     :cond_0

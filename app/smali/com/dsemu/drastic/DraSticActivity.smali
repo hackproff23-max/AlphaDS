@@ -4587,8 +4587,6 @@
     goto :goto_0
 
     :cond_0
-    invoke-static {p0, v0}, Lcom/dsemu/drastic/ui/AddUser;->e(Landroid/content/Context;Lcom/dsemu/drastic/filesystem/b;)V
-
     :cond_1
     invoke-static {v0}, Lcom/dsemu/drastic/filesystem/d;->s(Lcom/dsemu/drastic/filesystem/b;)V
 
@@ -7958,14 +7956,6 @@
 
     :cond_3
     if-ne p2, p3, :cond_key_y
-
-    new-instance p1, Landroid/content/Intent;
-
-    const-class p2, Lcom/dsemu/drastic/ui/Help;
-
-    invoke-direct {p1, p0, p2}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
-
-    invoke-virtual {p0, p1}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
 
     goto :goto_6
 

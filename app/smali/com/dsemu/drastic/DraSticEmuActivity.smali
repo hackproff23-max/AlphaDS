@@ -2811,69 +2811,17 @@
 .end method
 
 .method public u()V
-    .locals 7
+    .locals 2
 
-    invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
+    const/16 v0, 0x1001
 
-    move-result-wide v0
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
 
-    iget-wide v2, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->q:J
+    move-result-object v1
 
-    sub-long v2, v0, v2
+    invoke-virtual {p0, v0, v1}, Landroid/app/Activity;->setResult(ILandroid/content/Intent;)V
 
-    const-wide/16 v4, 0x3e8
+    invoke-virtual {p0}, Landroid/app/Activity;->finish()V
 
-    cmp-long v6, v2, v4
-
-    if-ltz v6, :cond_3
-
-    iput-wide v0, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->q:J
-
-    const/4 v0, 0x1
-
-    iput-boolean v0, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->x:Z
-
-    iput-boolean v0, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->y:Z
-
-    iget-object v1, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->g:Landroid/os/Handler;
-
-    const/4 v2, 0x0
-
-    if-eqz v1, :cond_0
-
-    invoke-virtual {v1, v2}, Landroid/os/Handler;->removeCallbacksAndMessages(Ljava/lang/Object;)V
-
-    :cond_0
-    iget-object v1, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->i:Landroid/os/Handler;
-
-    if-eqz v1, :cond_1
-
-    invoke-virtual {v1, v2}, Landroid/os/Handler;->removeCallbacksAndMessages(Ljava/lang/Object;)V
-
-    :cond_1
-    iget-object v1, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->k:Landroid/os/Handler;
-
-    if-eqz v1, :cond_2
-
-    invoke-virtual {v1, v2}, Landroid/os/Handler;->removeCallbacksAndMessages(Ljava/lang/Object;)V
-
-    :cond_2
-    iget-object v1, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->e:Lcom/dsemu/drastic/DraSticGlView;
-
-    invoke-virtual {v1}, Lcom/dsemu/drastic/DraSticGlView;->r0()V
-
-    invoke-static {v0}, Lcom/dsemu/drastic/DraSticJNI;->pauseSystem(I)V
-
-    iget-object v0, p0, Lcom/dsemu/drastic/DraSticEmuActivity;->e:Lcom/dsemu/drastic/DraSticGlView;
-
-    new-instance v1, Lcom/dsemu/drastic/DraSticEmuActivity$l;
-
-    invoke-direct {v1, p0, p0}, Lcom/dsemu/drastic/DraSticEmuActivity$l;-><init>(Lcom/dsemu/drastic/DraSticEmuActivity;Landroid/app/Activity;)V
-
-    const-wide/16 v2, 0x1e
-
-    invoke-virtual {v0, v1, v2, v3}, Landroid/view/View;->postDelayed(Ljava/lang/Runnable;J)Z
-
-    :cond_3
     return-void
 .end method

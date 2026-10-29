@@ -1927,59 +1927,25 @@
     <public type="layout" name="abc_tooltip" id="0x7f0c001b" />
     <public type="layout" name="activity_drastic" id="0x7f0c001c" />
     <public type="layout" name="activity_drastic_tv" id="0x7f0c001d" />
-    <public type="layout" name="adduser" id="0x7f0c001e" />
     <public type="layout" name="busy_activity" id="0x7f0c001f" />
-    <public type="layout" name="cheat_custom_item" id="0x7f0c0020" />
-    <public type="layout" name="cheat_custom_item_tv" id="0x7f0c0021" />
-    <public type="layout" name="cheat_edit" id="0x7f0c0022" />
-    <public type="layout" name="cheat_edit_tv" id="0x7f0c0023" />
-    <public type="layout" name="cheat_folder" id="0x7f0c0024" />
-    <public type="layout" name="cheat_folder_tv" id="0x7f0c0025" />
-    <public type="layout" name="cheat_item" id="0x7f0c0026" />
-    <public type="layout" name="cheat_item_tv" id="0x7f0c0027" />
-    <public type="layout" name="cheats" id="0x7f0c0028" />
-    <public type="layout" name="cheats_custom" id="0x7f0c0029" />
-    <public type="layout" name="cheats_custom_tv" id="0x7f0c002a" />
-    <public type="layout" name="cheats_tv" id="0x7f0c002b" />
-    <public type="layout" name="color_view" id="0x7f0c002c" />
-    <public type="layout" name="customizer" id="0x7f0c0030" />
-    <public type="layout" name="customizer_tv" id="0x7f0c0031" />
-    <public type="layout" name="device_item" id="0x7f0c0032" />
     <public type="layout" name="directory_item" id="0x7f0c0033" />
     <public type="layout" name="emuview" id="0x7f0c0034" />
     <public type="layout" name="extdisplay" id="0x7f0c0035" />
     <public type="layout" name="file_picker" id="0x7f0c0036" />
     <public type="layout" name="game_detail" id="0x7f0c0037" />
     <public type="layout" name="game_detail_tv" id="0x7f0c0038" />
-    <public type="layout" name="game_menu" id="0x7f0c0039" />
-    <public type="layout" name="game_menu_tv" id="0x7f0c003a" />
     <public type="layout" name="game_picker" id="0x7f0c003b" />
     <public type="layout" name="game_picker_tv" id="0x7f0c003c" />
-    <public type="layout" name="help" id="0x7f0c003d" />
-    <public type="layout" name="help_customizer_tv" id="0x7f0c003e" />
-    <public type="layout" name="help_text_view" id="0x7f0c0041" />
-    <public type="layout" name="help_tv" id="0x7f0c0042" />
-    <public type="layout" name="keymapper" id="0x7f0c0043" />
-    <public type="layout" name="keymapper_tv" id="0x7f0c0044" />
-    <public type="layout" name="keymapper_tv_view" id="0x7f0c0045" />
-    <public type="layout" name="keynamer" id="0x7f0c0046" />
-    <public type="layout" name="keynamer_tv" id="0x7f0c0047" />
     <public type="layout" name="layout_btn_continue" id="0x7f0c0048" />
     <public type="layout" name="layout_btn_exit" id="0x7f0c0049" />
     <public type="layout" name="layout_btn_help" id="0x7f0c004a" />
     <public type="layout" name="layout_btn_newgame" id="0x7f0c004b" />
     <public type="layout" name="layout_btn_options" id="0x7f0c004c" />
     <public type="layout" name="layout_btn_user" id="0x7f0c004d" />
-    <public type="layout" name="layout_ctrl" id="0x7f0c004e" />
-    <public type="layout" name="layout_screen" id="0x7f0c004f" />
     <public type="layout" name="layout_view" id="0x7f0c0050" />
     <public type="layout" name="layout_view_tv" id="0x7f0c0051" />
     <public type="layout" name="list_view" id="0x7f0c0052" />
     <public type="layout" name="list_view_tv" id="0x7f0c0053" />
-    <public type="layout" name="mapping_info" id="0x7f0c0054" />
-    <public type="layout" name="mapping_info_tv" id="0x7f0c0055" />
-    <public type="layout" name="mapping_info_view" id="0x7f0c0056" />
-    <public type="layout" name="mapping_info_view_tv" id="0x7f0c0057" />
     <public type="layout" name="migrationactivity" id="0x7f0c0058" />
     <public type="layout" name="select_dialog_item_material" id="0x7f0c0068" />
     <public type="layout" name="select_dialog_multichoice_material" id="0x7f0c0069" />
