@@ -1728,6 +1728,7 @@ public class HomeActivity extends Activity {
             public void run() {
                 shaderListBox = null;
                 shaderValActive = null;
+                ShaderTools.detachUi();
                 rootFrame.removeView(overlay);
             }
         };
@@ -1852,32 +1853,51 @@ public class HomeActivity extends Activity {
                 openImport();
             }
         });
-        dl.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
+        final ShaderTools.Progress uiP = new ShaderTools.Progress() {
+            public void update(String label, int percent) {
+                dlBox.setVisibility(View.VISIBLE);
                 dl.setEnabled(false);
                 dl.setAlpha(0.5f);
-                dlLabel.setText("Iniciando...");
-                dlBar.setIndeterminate(true);
-                dlBox.setVisibility(View.VISIBLE);
-                ShaderTools.downloadAllShaders(HomeActivity.this, tree, new ShaderTools.Progress() {
-                    public void update(String label, int percent) {
-                        dlLabel.setText(label);
-                        if (percent < 0) {
-                            dlBar.setIndeterminate(true);
-                        } else {
-                            dlBar.setIndeterminate(false);
-                            dlBar.setProgress(percent);
-                        }
+                dlLabel.setText(label);
+                if (percent < 0) {
+                    dlBar.setIndeterminate(true);
+                } else {
+                    dlBar.setIndeterminate(false);
+                    dlBar.setProgress(percent);
+                }
+            }
+        };
+        final ShaderTools.Result uiR = new ShaderTools.Result() {
+            public void done(String summary) {
+                dl.setEnabled(true);
+                dl.setAlpha(1f);
+                dlBox.setVisibility(View.GONE);
+                ShaderTools.dlPendingSummary = null;
+                Toast.makeText(HomeActivity.this, summary, Toast.LENGTH_LONG).show();
+                fillShaderList();
+            }
+        };
+        // reabriu o menu com download em andamento (ou terminado enquanto estava fora)
+        ShaderTools.attachUi(uiP, uiR);
+        if (ShaderTools.dlRunning) {
+            uiP.update(ShaderTools.dlLabel, ShaderTools.dlPercent);
+        } else if (ShaderTools.dlPendingSummary != null) {
+            uiR.done(ShaderTools.dlPendingSummary);
+        }
+        dl.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (ShaderTools.dlRunning) return;
+                uiP.update("Iniciando...", -1);
+                if (Build.VERSION.SDK_INT >= 33) {
+                    try {
+                        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 77);
+                    } catch (Throwable ignored) {
                     }
-                }, new ShaderTools.Result() {
-                    public void done(String summary) {
-                        dl.setEnabled(true);
-                        dl.setAlpha(1f);
-                        dlBox.setVisibility(View.GONE);
-                        Toast.makeText(HomeActivity.this, summary, Toast.LENGTH_LONG).show();
-                        fillShaderList();
-                    }
-                });
+                }
+                ShaderDownloadService.start(HomeActivity.this, tree);
+                Toast.makeText(HomeActivity.this,
+                        "Download continua em segundo plano (veja a notificacao)",
+                        Toast.LENGTH_SHORT).show();
             }
         });
 
