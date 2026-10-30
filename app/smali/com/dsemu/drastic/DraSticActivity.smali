@@ -4339,6 +4339,10 @@
     invoke-direct {p0}, Lcom/dsemu/drastic/DraSticActivity;->installShadersThread()V
 
     :from_shortcut
+    const/4 v2, 0x0
+
+    invoke-virtual {p0, v2}, Lcom/dsemu/drastic/DraSticActivity;->k0(Landroid/app/AlertDialog;)V
+
     invoke-direct {p0}, Lcom/dsemu/drastic/DraSticActivity;->l0()V
 
     const-string v2, "virtual_controller/Simple"

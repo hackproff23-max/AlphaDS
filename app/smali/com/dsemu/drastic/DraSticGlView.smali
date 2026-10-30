@@ -1835,7 +1835,7 @@
 
     iget-object v0, p0, Lcom/dsemu/drastic/DraSticGlView;->k:Lcom/dsemu/drastic/DraSticEmuActivity;
 
-    invoke-virtual {v0}, Lcom/dsemu/drastic/DraSticEmuActivity;->openMain()V
+    invoke-virtual {v0}, Lcom/dsemu/drastic/DraSticEmuActivity;->u()V
 
     return-void
 .end method
@@ -2720,8 +2720,15 @@
 .end method
 
 .method public x()V
-    .locals 0
+    .locals 1
 
+    iget-object v0, p0, Lcom/dsemu/drastic/DraSticGlView;->k:Lcom/dsemu/drastic/DraSticEmuActivity;
+
+    if-eqz v0, :cond_x
+
+    invoke-virtual {v0}, Lcom/dsemu/drastic/DraSticEmuActivity;->openMain()V
+
+    :cond_x
     return-void
 .end method
 
