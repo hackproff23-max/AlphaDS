@@ -125,6 +125,82 @@ public class HomeActivity extends Activity {
             0xFF1565C0, 0xFF3D8BFF, 0xFF8E24AA, 0xFFD81B60
     };
 
+    /** Mostra as pastas de shaders do repositorio para escolher e baixa so as marcadas. */
+    private void chooseAndDownloadShaders(final TextView dl, final Uri tree) {
+        dl.setEnabled(false);
+        dl.setAlpha(0.5f);
+        Toast.makeText(this, "Buscando lista de shaders...", Toast.LENGTH_SHORT).show();
+        ShaderTools.listCategories(new ShaderTools.Categories() {
+            public void got(final List<String> names) {
+                if (names == null) {
+                    startShaderDownload(dl, tree, null);
+                    return;
+                }
+                final boolean[] checked = new boolean[names.size()];
+                final android.content.DialogInterface.OnClickListener reenable =
+                        new android.content.DialogInterface.OnClickListener() {
+                            public void onClick(android.content.DialogInterface di, int w) {
+                                dl.setEnabled(true);
+                                dl.setAlpha(1f);
+                            }
+                        };
+                final AlertDialog d = new AlertDialog.Builder(HomeActivity.this)
+                        .setTitle("Quais shaders baixar?")
+                        .setMultiChoiceItems(names.toArray(new String[0]), checked,
+                                new android.content.DialogInterface.OnMultiChoiceClickListener() {
+                                    public void onClick(android.content.DialogInterface di, int which, boolean on) {
+                                        checked[which] = on;
+                                    }
+                                })
+                        .setPositiveButton("Baixar", new android.content.DialogInterface.OnClickListener() {
+                            public void onClick(android.content.DialogInterface di, int w) {
+                                java.util.HashSet<String> sel = new java.util.HashSet<String>();
+                                for (int i = 0; i < checked.length; i++) if (checked[i]) sel.add(names.get(i));
+                                if (sel.isEmpty()) {
+                                    Toast.makeText(HomeActivity.this, "Nenhuma shader marcada", Toast.LENGTH_SHORT).show();
+                                    dl.setEnabled(true);
+                                    dl.setAlpha(1f);
+                                    return;
+                                }
+                                startShaderDownload(dl, tree, sel);
+                            }
+                        })
+                        .setNeutralButton("Marcar todas", null)
+                        .setNegativeButton("Cancelar", reenable)
+                        .setOnCancelListener(new android.content.DialogInterface.OnCancelListener() {
+                            public void onCancel(android.content.DialogInterface di) {
+                                dl.setEnabled(true);
+                                dl.setAlpha(1f);
+                            }
+                        })
+                        .create();
+                d.show();
+                d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        boolean any = false;
+                        for (boolean b : checked) if (b) any = true;
+                        for (int i = 0; i < checked.length; i++) {
+                            checked[i] = !any;
+                            d.getListView().setItemChecked(i, !any);
+                        }
+                        ((TextView) v).setText(any ? "Marcar todas" : "Desmarcar todas");
+                    }
+                });
+            }
+        });
+    }
+
+    private void startShaderDownload(final TextView dl, Uri tree, java.util.Set<String> only) {
+        ShaderTools.downloadShaders(this, tree, only, new ShaderTools.Result() {
+            public void done(String summary) {
+                dl.setEnabled(true);
+                dl.setAlpha(1f);
+                Toast.makeText(HomeActivity.this, summary, Toast.LENGTH_LONG).show();
+                fillShaderList();
+            }
+        });
+    }
+
     private int dp(float v) {
         return (int) (v * d + 0.5f);
     }
@@ -1065,11 +1141,9 @@ public class HomeActivity extends Activity {
 
     private void launch(Game g) {
         Intent i = new Intent(Intent.ACTION_VIEW, g.uri);
-        // vai direto para a tela do logo girando (DraStic), sem tela intermediaria
-        i.setComponent(new ComponentName(this, "com.dsemu.drastic.DraSticActivity"));
+        i.setComponent(new ComponentName(this, "com.dsemu.drastic.LoadingActivity"));
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivity(i);
-        overridePendingTransition(0, 0);
     }
 
     // ---------- opcoes de texto (botao vermelho "Aa") ----------
@@ -1623,7 +1697,7 @@ public class HomeActivity extends Activity {
         shaderListBox.removeAllViews();
         String cur = ShaderTools.currentShader(this);
         HashSet<String> seen = new HashSet<String>();
-        String[] builtins = {"Linear", "None"};
+        String[] builtins = {"Linear", "None", "Point"};
         for (String b : builtins) {
             seen.add(b);
             shaderListBox.addView(shaderRow(b, b.equals(cur)));
@@ -1651,39 +1725,12 @@ public class HomeActivity extends Activity {
         t.setBackgroundDrawable(bgd);
         t.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                // so troca a shader; nao mexe nos ajustes de imagem (filtro)
                 ShaderTools.setCurrentShader(HomeActivity.this, name);
                 fillShaderList();
+                regenColor();
             }
         });
         return t;
-    }
-
-    /** Dialogo para escolher a shader ativa entre as instaladas. */
-    private void showShaderPicker() {
-        final List<String> names = new ArrayList<String>();
-        names.add("Linear");
-        names.add("None");
-        for (String n : ShaderTools.installedShaders(this, treeUri())) {
-            if (!names.contains(n)) names.add(n);
-        }
-        String cur = ShaderTools.currentShader(this);
-        int idx = names.indexOf(cur);
-        final String[] arr = names.toArray(new String[0]);
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Selecionar shader")
-                .setSingleChoiceItems(arr, idx, new android.content.DialogInterface.OnClickListener() {
-                    public void onClick(android.content.DialogInterface d, int which) {
-                        // so troca a shader; nao mexe nos ajustes de imagem (filtro)
-                        ShaderTools.setCurrentShader(HomeActivity.this, arr[which]);
-                        fillShaderList();
-                        Toast.makeText(HomeActivity.this, "Shader: " + arr[which],
-                                Toast.LENGTH_SHORT).show();
-                        d.dismiss();
-                    }
-                })
-                .setNegativeButton("Cancelar", null)
-                .show();
     }
 
     private String docName(Uri doc) {
@@ -1730,7 +1777,6 @@ public class HomeActivity extends Activity {
             public void run() {
                 shaderListBox = null;
                 shaderValActive = null;
-                ShaderTools.detachUi();
                 rootFrame.removeView(overlay);
             }
         };
@@ -1791,7 +1837,7 @@ public class HomeActivity extends Activity {
         rowActive.addView(shaderValActive, new LinearLayout.LayoutParams(-2, -2));
         panel.addView(rowActive, new LinearLayout.LayoutParams(-1, -2));
         TextView hint1 = new TextView(this);
-        hint1.setText("Vale a partir do proximo jogo aberto. Escolher a shader nao altera os ajustes de imagem.");
+        hint1.setText("Vale a partir do proximo jogo aberto. Toque numa shader da lista para ativar.");
         hint1.setTextColor(0xFF9A9AA2);
         hint1.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         hint1.setTypeface(bebas());
@@ -1818,30 +1864,7 @@ public class HomeActivity extends Activity {
         blp.rightMargin = dp(8);
         btns.addView(imp, blp);
         btns.addView(dl, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView sel = pillButton("Selecionar shader", 0xFF3D8BFF, 0xFFFFFFFF);
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
-        slp.setMargins(dp(16), dp(4), dp(16), dp(8));
-        panel.addView(sel, slp);
-        sel.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                showShaderPicker();
-            }
-        });
         panel.addView(btns, new LinearLayout.LayoutParams(-1, -2));
-        final LinearLayout dlBox = new LinearLayout(this);
-        dlBox.setOrientation(LinearLayout.VERTICAL);
-        dlBox.setPadding(dp(16), dp(8), dp(16), 0);
-        dlBox.setVisibility(View.GONE);
-        final TextView dlLabel = new TextView(this);
-        dlLabel.setTextColor(0xFF333338);
-        dlLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        dlLabel.setTypeface(bebas());
-        dlBox.addView(dlLabel, new LinearLayout.LayoutParams(-1, -2));
-        final android.widget.ProgressBar dlBar = new android.widget.ProgressBar(this, null,
-                android.R.attr.progressBarStyleHorizontal);
-        dlBar.setMax(100);
-        dlBox.addView(dlBar, new LinearLayout.LayoutParams(-1, dp(14)));
-        panel.addView(dlBox, new LinearLayout.LayoutParams(-1, -2));
         TextView hintDl = new TextView(this);
         hintDl.setText("Importar: arquivos .dfx, .slang, .slangp ou .glsl. Baixar: puxa e converte as shaders do repositorio slang-shaders (libretro). Ajuste abaixo funciona junto com qualquer shader.");
         hintDl.setTextColor(0xFF9A9AA2);
@@ -1855,51 +1878,9 @@ public class HomeActivity extends Activity {
                 openImport();
             }
         });
-        final ShaderTools.Progress uiP = new ShaderTools.Progress() {
-            public void update(String label, int percent) {
-                dlBox.setVisibility(View.VISIBLE);
-                dl.setEnabled(false);
-                dl.setAlpha(0.5f);
-                dlLabel.setText(label);
-                if (percent < 0) {
-                    dlBar.setIndeterminate(true);
-                } else {
-                    dlBar.setIndeterminate(false);
-                    dlBar.setProgress(percent);
-                }
-            }
-        };
-        final ShaderTools.Result uiR = new ShaderTools.Result() {
-            public void done(String summary) {
-                dl.setEnabled(true);
-                dl.setAlpha(1f);
-                dlBox.setVisibility(View.GONE);
-                ShaderTools.dlPendingSummary = null;
-                Toast.makeText(HomeActivity.this, summary, Toast.LENGTH_LONG).show();
-                fillShaderList();
-            }
-        };
-        // reabriu o menu com download em andamento (ou terminado enquanto estava fora)
-        ShaderTools.attachUi(uiP, uiR);
-        if (ShaderTools.dlRunning) {
-            uiP.update(ShaderTools.dlLabel, ShaderTools.dlPercent);
-        } else if (ShaderTools.dlPendingSummary != null) {
-            uiR.done(ShaderTools.dlPendingSummary);
-        }
         dl.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                if (ShaderTools.dlRunning) return;
-                uiP.update("Iniciando...", -1);
-                if (Build.VERSION.SDK_INT >= 33) {
-                    try {
-                        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 77);
-                    } catch (Throwable ignored) {
-                    }
-                }
-                ShaderDownloadService.start(HomeActivity.this, tree);
-                Toast.makeText(HomeActivity.this,
-                        "Download continua em segundo plano (veja a notificacao)",
-                        Toast.LENGTH_SHORT).show();
+                chooseAndDownloadShaders(dl, tree);
             }
         });
 
