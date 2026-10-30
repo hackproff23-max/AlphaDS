@@ -34,6 +34,7 @@ import android.text.TextPaint;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -53,7 +54,11 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -68,6 +73,7 @@ import java.util.List;
 public class HomeActivity extends Activity {
     private static final int REQ_TREE = 11;
     private static final int REQ_IMPORT = 12;
+    private static final int REQ_SKIN = 13;
     private static final int GLOW = 0xFF3D8BFF;
 
     private static class Game {
@@ -100,6 +106,12 @@ public class HomeActivity extends Activity {
     };
 
     private static Typeface sBebas;
+
+    // captura de tecla para o mapeamento do menu Controle
+    private int capturingKeySlot = -1;
+    private int keymapProfile = 0;
+    private java.util.HashMap<Integer, TextView> keyRowValues =
+            new java.util.HashMap<Integer, TextView>();
 
     private static final int[] TXT_COLORS = {
             0xFF000000, 0xFF444444, 0xFF888888, 0xFFCCCCCC, 0xFFFFFFFF, 0xFF795548,
@@ -317,7 +329,11 @@ public class HomeActivity extends Activity {
             }
         }));
         // branco: controle
-        dock.addView(slot(IconView.PAD, 0xFFFFFFFF, 0xFF3A3A3C, soon("Controle")));
+        dock.addView(slot(IconView.PAD, 0xFFFFFFFF, 0xFF3A3A3C, new View.OnClickListener() {
+            public void onClick(View v) {
+                showPadMenu();
+            }
+        }));
         // cinza: configuracoes
         dock.addView(slot(IconView.GEAR, 0xFF3A3A3C, 0xFFFFFFFF, new View.OnClickListener() {
             public void onClick(View v) {
@@ -498,6 +514,134 @@ public class HomeActivity extends Activity {
                     });
                 }
             }).start();
+        } else if (req == REQ_SKIN && res == RESULT_OK && data != null) {
+            final ArrayList<Uri> uris = new ArrayList<Uri>();
+            if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+            android.content.ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null) {
+                        uris.add(u);
+                    }
+                }
+            }
+            if (uris.isEmpty()) return;
+            // limpa a pasta do skin e copia as imagens escolhidas para la;
+            // o emulador le os PNGs de _VirtualPadSkinFolder
+            File dir = new File(getFilesDir(), "padskin");
+            if (dir.exists()) {
+                File[] old = dir.listFiles();
+                if (old != null) {
+                    for (File f : old) {
+                        f.delete();
+                    }
+                }
+            } else {
+                dir.mkdirs();
+            }
+            final File skinDir = dir;
+            new Thread(new Runnable() {
+                public void run() {
+                    int ok = 0;
+                    for (int i = 0; i < uris.size(); i++) {
+                        String nm = docName(uris.get(i));
+                        if (nm == null || nm.length() == 0) {
+                            nm = "botao_" + (i + 1) + ".png";
+                        }
+                        if (!nm.toLowerCase().endsWith(".png")) {
+                            nm = nm + ".png";
+                        }
+                        try {
+                            InputStream in = getContentResolver().openInputStream(uris.get(i));
+                            OutputStream out = new FileOutputStream(new File(skinDir, nm));
+                            byte[] buf = new byte[8192];
+                            int n;
+                            while ((n = in.read(buf)) > 0) {
+                                out.write(buf, 0, n);
+                            }
+                            out.close();
+                            in.close();
+                            ok++;
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    if (ok > 0) {
+                        draPrefs().edit().putString("_VirtualPadSkinFolder",
+                                skinDir.getAbsolutePath()).commit();
+                    }
+                    final int nok = ok;
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            if (nok > 0) {
+                                Toast.makeText(HomeActivity.this, nok
+                                        + " imagem(ns) importada(s). Vale a partir do "
+                                        + "proximo jogo aberto.", Toast.LENGTH_LONG).show();
+                            } else {
+                                Toast.makeText(HomeActivity.this,
+                                        "Nao foi possivel importar as imagens.",
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                        }
+                    });
+                }
+            }).start();
+        }
+    }
+
+    /** Enquanto o mapeamento esta esperando, captura qualquer tecla do teclado/controle. */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        if (capturingKeySlot >= 0) {
+            int a = e.getAction();
+            if (a == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                int code = e.getKeyCode();
+                if (code == KeyEvent.KEYCODE_BACK) {
+                    capturingKeySlot = -1;
+                    Toast.makeText(this, "Mapeamento cancelado", Toast.LENGTH_SHORT).show();
+                    refreshKeyRows();
+                    return true;
+                }
+                String dev = "teclado";
+                try {
+                    if (e.getDevice() != null && e.getDevice().getName() != null
+                            && e.getDevice().getName().length() > 0) {
+                        dev = e.getDevice().getName();
+                    }
+                } catch (Exception ignored) {
+                }
+                SharedPreferences p = draPrefs();
+                p.edit().putInt("_KeyMapConfigs_" + keymapProfile + "_" + capturingKeySlot,
+                        code).commit();
+                p.edit().putString("_KeyMapDevices_" + keymapProfile, dev).commit();
+                Toast.makeText(this, "Mapeado: " + keyCodeName(code), Toast.LENGTH_SHORT).show();
+                capturingKeySlot = -1;
+                refreshKeyRows();
+                return true;
+            }
+            return true; // ignora repeticoes/ups enquanto captura
+        }
+        return super.dispatchKeyEvent(e);
+    }
+
+    private String keyCodeName(int code) {
+        String s = KeyEvent.keyCodeToString(code); // "KEYCODE_BUTTON_A"
+        if (s.startsWith("KEYCODE_")) {
+            s = s.substring(8);
+        }
+        return s.toLowerCase().replace("_", " ");
+    }
+
+    private void refreshKeyRows() {
+        SharedPreferences p = draPrefs();
+        for (int i = 0; i < PAD_MAP_SLOTS.length; i++) {
+            TextView tv = keyRowValues.get(PAD_MAP_SLOTS[i]);
+            if (tv != null) {
+                int code = p.getInt("_KeyMapConfigs_" + keymapProfile + "_" + PAD_MAP_SLOTS[i], -1);
+                tv.setText(code < 0 ? "-" : keyCodeName(code));
+            }
         }
     }
 
@@ -2617,6 +2761,398 @@ public class HomeActivity extends Activity {
         overlay.addView(panel, new FrameLayout.LayoutParams(-1,
                 (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
         rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    // ---------- controle (botao branco do pad) ----------
+
+    /** Slots do mapeamento de teclas do DraStic (os indices 8 a 11 sao internos de toque). */
+    private static final int[] PAD_MAP_SLOTS = {
+            0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+            26, 27, 28
+    };
+    private static final String[] PAD_MAP_LABELS = {
+            "X", "Y", "B", "A", "R", "L", "Start", "Select",
+            "Cima", "Direita", "Baixo", "Esquerda", "Trocar telas", "Avanco rapido",
+            "Salvar rapido", "Carregar rapido", "Abrir menu", "Cima-Esquerda", "Cima-Direita",
+            "Baixo-Esquerda", "Baixo-Direita", "Meia troca de tela", "Ruido do microfone",
+            "Ligar auto-fire", "Ponteiro para baixo"
+    };
+
+    /** Abre o menu de controle (botao branco): mapeamento, skin PNG, analogico,
+     *  ocultar botoes e atalho para o editor de layout. */
+    private void showPadMenu() {
+        final SharedPreferences p = draPrefs();
+        final SharedPreferences home = prefs;
+
+        final FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x66000000);
+        overlay.setClickable(true);
+        final Runnable closer = new Runnable() {
+            public void run() {
+                rootFrame.removeView(overlay);
+            }
+        };
+        overlay.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        ScrollView panel = new ScrollView(this);
+        panel.setVerticalScrollBarEnabled(false);
+        panel.setFillViewport(true);
+        panel.setClickable(true);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(0xFFF7F7F9);
+        pbg.setCornerRadii(new float[]{dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0});
+        panel.setBackgroundDrawable(pbg);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(12), dp(16), dp(20));
+        panel.addView(content, new FrameLayout.LayoutParams(-1, -2));
+
+        // cabecalho
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(this);
+        title.setText("Controle");
+        title.setTextColor(0xFF222222);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(bebas());
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView x = new TextView(this);
+        x.setText("X");
+        x.setTextColor(0xFF666666);
+        x.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        x.setTypeface(bebas());
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable xbg = new GradientDrawable();
+        xbg.setColor(0xFFE8E8EC);
+        xbg.setCornerRadius(dp(16));
+        x.setBackgroundDrawable(xbg);
+        x.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+        head.addView(x, new LinearLayout.LayoutParams(-2, -2));
+        content.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView hint0 = vidHint("Vale a partir do proximo jogo aberto.");
+        hint0.setPadding(0, dp(6), 0, 0);
+        content.addView(hint0, new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== mapeamento =====
+        content.addView(vidSection("Mapeamento (teclado e controle)"), new LinearLayout.LayoutParams(-1, -2));
+        final int[] mapId = new int[]{p.getInt("_KeyMapId", -1)};
+        final String[] profLabels = {"Padrao (auto)", "Perfil 1", "Perfil 2", "Perfil 3"};
+        final int[] profVals = {-1, 0, 1, 2};
+        final List<Runnable> refreshers = new ArrayList<Runnable>();
+        content.addView(vidCycle("Perfil de mapeamento", profLabels, profVals, mapId,
+                refreshers, new Runnable() {
+                    public void run() {
+                        p.edit().putInt("_KeyMapId", mapId[0]).commit();
+                    }
+                }), new LinearLayout.LayoutParams(-1, -2));
+
+        TextView btnMap = pillButton("Mapear teclas", 0xFF3A3A3C, 0xFFFFFFFF);
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(-1, -2);
+        mlp.topMargin = dp(8);
+        content.addView(btnMap, mlp);
+        content.addView(vidHint("Toque num item da lista e aperte uma tecla no teclado ou "
+                + "um botao do controle/joystick conectado. Voltar cancela."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRowHere("Desativar mapeamentos", "_DisableMapped", false, p),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        btnMap.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (mapId[0] < 0) {
+                    mapId[0] = 0;
+                    p.edit().putInt("_KeyMapId", 0).commit();
+                    for (int i = 0; i < refreshers.size(); i++) {
+                        refreshers.get(i).run();
+                    }
+                }
+                keymapProfile = mapId[0];
+                keyRowValues.clear();
+                final FrameLayout mOverlay = new FrameLayout(HomeActivity.this);
+                mOverlay.setBackgroundColor(0x66000000);
+                mOverlay.setClickable(true);
+                final Runnable mCloser = new Runnable() {
+                    public void run() {
+                        capturingKeySlot = -1;
+                        rootFrame.removeView(mOverlay);
+                    }
+                };
+                mOverlay.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        mCloser.run();
+                    }
+                });
+                ScrollView mPanel = new ScrollView(HomeActivity.this);
+                mPanel.setVerticalScrollBarEnabled(false);
+                mPanel.setClickable(true);
+                GradientDrawable mbg = new GradientDrawable();
+                mbg.setColor(0xFFF7F7F9);
+                mbg.setCornerRadii(new float[]{dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0});
+                mPanel.setBackgroundDrawable(mbg);
+                LinearLayout mc = new LinearLayout(HomeActivity.this);
+                mc.setOrientation(LinearLayout.VERTICAL);
+                mc.setPadding(dp(16), dp(12), dp(16), dp(20));
+                mPanel.addView(mc, new FrameLayout.LayoutParams(-1, -2));
+                TextView mt = new TextView(HomeActivity.this);
+                mt.setText("Mapear teclas - Perfil " + (keymapProfile + 1));
+                mt.setTextColor(0xFF222222);
+                mt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+                mt.setTypeface(bebas());
+                mc.addView(mt, new LinearLayout.LayoutParams(-1, -2));
+                mc.addView(vidHint("Toque num item e aperte a tecla/botao que quiser usar. "
+                        + "O botao Voltar cancela a captura."), new LinearLayout.LayoutParams(-1, -2));
+                for (int i = 0; i < PAD_MAP_SLOTS.length; i++) {
+                    final int slot = PAD_MAP_SLOTS[i];
+                    final TextView val = menuValue();
+                    keyRowValues.put(slot, val);
+                    LinearLayout row = vidRow(PAD_MAP_LABELS[i] + " ...", val);
+                    row.setOnClickListener(new View.OnClickListener() {
+                        public void onClick(View v2) {
+                            capturingKeySlot = slot;
+                            Toast.makeText(HomeActivity.this,
+                                    "Aperte a tecla/botao para \"" + PAD_MAP_LABELS[slot]
+                                            + "\" (Voltar cancela)", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                    mc.addView(row, new LinearLayout.LayoutParams(-1, -2));
+                }
+                TextView clearBtn = pillButton("Limpar mapeamento deste perfil", 0xFFE53935, 0xFFFFFFFF);
+                LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(-1, -2);
+                clp2.topMargin = dp(14);
+                mc.addView(clearBtn, clp2);
+                clearBtn.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v2) {
+                        SharedPreferences.Editor e = p.edit();
+                        for (int i = 0; i < PAD_MAP_SLOTS.length; i++) {
+                            e.putInt("_KeyMapConfigs_" + keymapProfile + "_" + PAD_MAP_SLOTS[i], -1);
+                        }
+                        e.commit();
+                        refreshKeyRows();
+                        Toast.makeText(HomeActivity.this, "Mapeamento limpo", Toast.LENGTH_SHORT).show();
+                    }
+                });
+                TextView closeBtn = pillButton("Fechar", 0xFF2E9E3E, 0xFFFFFFFF);
+                mc.addView(closeBtn, cwlp(8));
+                closeBtn.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v2) {
+                        mCloser.run();
+                    }
+                });
+                mOverlay.addView(mPanel, new FrameLayout.LayoutParams(-1,
+                        (int) (getResources().getDisplayMetrics().heightPixels * 0.86f),
+                        Gravity.BOTTOM));
+                refreshKeyRows();
+                rootFrame.addView(mOverlay, new FrameLayout.LayoutParams(-1, -1));
+            }
+        });
+
+        // ===== skin (botoes em PNG) =====
+        content.addView(vidSection("Botoes em PNG (skin do pad)"), new LinearLayout.LayoutParams(-1, -2));
+        TextView btnSkin = pillButton("Importar imagens dos botoes (PNG)", 0xFF1565C0, 0xFFFFFFFF);
+        content.addView(btnSkin, new LinearLayout.LayoutParams(-1, -2));
+        btnSkin.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("image/png");
+                i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                startActivityForResult(Intent.createChooser(i, "Escolha os PNGs dos botoes"),
+                        REQ_SKIN);
+            }
+        });
+        TextView btnSkinDef = pillButton("Voltar aos botoes padrao", 0xFFE8E8EC, 0xFF333338);
+        content.addView(btnSkinDef, cwlp(8));
+        btnSkinDef.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                p.edit().putString("_VirtualPadSkinFolder", "").commit();
+                Toast.makeText(HomeActivity.this,
+                        "Skin padrao. Vale a partir do proximo jogo aberto.",
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
+        content.addView(vidHint("Escolha os PNGs dos botoes que voce quiser (pode marcar "
+                + "varios de uma vez). Eles sao copiados para a pasta do app e o emulador "
+                + "passa a usa-los como skin do pad."), new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== ocultar e aparencia dos botoes =====
+        content.addView(vidSection("Botoes na tela"), new LinearLayout.LayoutParams(-1, -2));
+        final float[] alphaCur = new float[]{p.getFloat("_ControllerAlpha", 0.45f)};
+        final boolean[] hidden = new boolean[]{alphaCur[0] <= 0.001f};
+        final float savedAlpha = home.getFloat("pad_alpha_saved", 0.45f);
+        if (hidden[0] && savedAlpha > 0.001f) {
+            alphaCur[0] = savedAlpha;
+        }
+        final TextView valAlpha = menuValue();
+        valAlpha.setText(hidden[0] ? "Ocultos" : Math.round(alphaCur[0] * 100f) + "%");
+        content.addView(vidSwitch("Ocultar todos os botoes", vidSwitchNew(hidden,
+                new Runnable() {
+                    public void run() {
+                        if (hidden[0]) {
+                            home.edit().putFloat("pad_alpha_saved", alphaCur[0]).commit();
+                            p.edit().putFloat("_ControllerAlpha", 0f).commit();
+                            valAlpha.setText("Ocultos");
+                        } else {
+                            p.edit().putFloat("_ControllerAlpha", alphaCur[0]).commit();
+                            valAlpha.setText(Math.round(alphaCur[0] * 100f) + "%");
+                        }
+                    }
+                })), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidRow("Transparencia dos botoes", valAlpha),
+                new LinearLayout.LayoutParams(-1, -2));
+        SeekBar sbAlpha = new SeekBar(this);
+        sbAlpha.setMax(100);
+        sbAlpha.setProgress(Math.round(alphaCur[0] * 100f));
+        sbAlpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
+                alphaCur[0] = pr / 100f;
+                if (!hidden[0]) {
+                    valAlpha.setText(pr + "%");
+                    p.edit().putFloat("_ControllerAlpha", alphaCur[0]).commit();
+                }
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+            }
+        });
+        content.addView(sbAlpha, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRowHere("Vibracao ao tocar", "_HapticFeedback", true, p),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRowHere("Nao usar diagonais no D-Pad", "_NoDiagonals", false, p),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== analogico =====
+        content.addView(vidSection("Analogico"), new LinearLayout.LayoutParams(-1, -2));
+        final int[] stick = new int[]{p.getInt("_AnalogStickMode", -1)};
+        content.addView(vidCycle("Ativar analogico virtual",
+                new String[]{"Automatico", "Esquerdo", "Direito"}, new int[]{-1, 0, 1}, stick,
+                refreshers, new Runnable() {
+                    public void run() {
+                        p.edit().putInt("_AnalogStickMode", stick[0]).commit();
+                    }
+                }), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Automatico decide sozinho pelo jogo; Esquerdo/Direito "
+                + "forcam o lado da tela onde o analogico aparece."), new LinearLayout.LayoutParams(-1, -2));
+        final boolean[] pen = new boolean[]{p.getBoolean("_AnalogTouch", false)};
+        content.addView(vidSwitch("Analogico de caneta (arrastar na tela)",
+                vidSwitchNew(pen, new Runnable() {
+                    public void run() {
+                        p.edit().putBoolean("_AnalogTouch", pen[0]).commit();
+                    }
+                })), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Arrastar a caneta/dedo na tela de baixo move o analogico "
+                + "virtual."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRowHere("Gatilhos do analogico", "_AnalogTriggers", false, p),
+                new LinearLayout.LayoutParams(-1, -2));
+        final float defDead = 0.3f;
+        final float dead = p.getFloat("_AnalogDeadzone", defDead);
+        final TextView valDead = menuValue();
+        valDead.setText(Math.round(dead * 100f) + "%");
+        content.addView(vidRow("Zona morta do analogico", valDead),
+                new LinearLayout.LayoutParams(-1, -2));
+        SeekBar sbDead = new SeekBar(this);
+        sbDead.setMax(100);
+        sbDead.setProgress(Math.round(dead * 100f));
+        sbDead.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
+                valDead.setText(pr + "%");
+                p.edit().putFloat("_AnalogDeadzone", pr / 100f).commit();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+            }
+        });
+        content.addView(sbDead, new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== layout =====
+        content.addView(vidSection("Layout"), new LinearLayout.LayoutParams(-1, -2));
+        TextView btnEdPad = pillButton("Editar layout de controle", 0xFF2E9E3E, 0xFFFFFFFF);
+        content.addView(btnEdPad, new LinearLayout.LayoutParams(-1, -2));
+        btnEdPad.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+                showLayoutEditor(1);
+            }
+        });
+        TextView btnEdScr = pillButton("Editar posicao das telas", 0xFF3A3A3C, 0xFFFFFFFF);
+        content.addView(btnEdScr, cwlp(8));
+        btnEdScr.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+                showLayoutEditor(0);
+            }
+        });
+
+        // rodape
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        TextView reset = pillButton("Padrao", 0xFFE8E8EC, 0xFF333338);
+        TextView closeBtn = pillButton("Fechar", 0xFF2E9E3E, 0xFFFFFFFF);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, -2, 1f);
+        rlp.rightMargin = dp(8);
+        btns.addView(reset, rlp);
+        btns.addView(closeBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        content.addView(btns, cwlp(18));
+
+        reset.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                SharedPreferences.Editor e = p.edit();
+                e.putBoolean("_DisableMapped", false);
+                e.putString("_VirtualPadSkinFolder", "");
+                e.putFloat("_ControllerAlpha", 0.45f);
+                e.putBoolean("_HapticFeedback", true);
+                e.putBoolean("_NoDiagonals", false);
+                e.putInt("_AnalogStickMode", -1);
+                e.putBoolean("_AnalogTouch", false);
+                e.putBoolean("_AnalogTriggers", false);
+                e.putFloat("_AnalogDeadzone", defDead);
+                e.commit();
+                hidden[0] = false;
+                alphaCur[0] = 0.45f;
+                valAlpha.setText("45%");
+                sbAlpha.setProgress(45);
+                stick[0] = -1;
+                mapId[0] = -1;
+                for (int i = 0; i < refreshers.size(); i++) {
+                    refreshers.get(i).run();
+                }
+            }
+        });
+        closeBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        overlay.addView(panel, new FrameLayout.LayoutParams(-1,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
+        rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    /** Switch simples de uma chave booleana, gravando na hora. */
+    private LinearLayout setSwitchRowHere(String label, final String key, boolean def,
+                                          final SharedPreferences p) {
+        final boolean[] st = new boolean[]{p.getBoolean(key, def)};
+        return vidSwitch(label, vidSwitchNew(st, new Runnable() {
+            public void run() {
+                p.edit().putBoolean(key, st[0]).commit();
+            }
+        }));
     }
 
     // ---------- editor de telas e controles ----------
