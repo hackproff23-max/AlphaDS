@@ -1649,9 +1649,9 @@ public class HomeActivity extends Activity {
         t.setBackgroundDrawable(bgd);
         t.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
+                // so troca a shader; nao mexe nos ajustes de imagem (filtro)
                 ShaderTools.setCurrentShader(HomeActivity.this, name);
                 fillShaderList();
-                regenColor();
             }
         });
         return t;
@@ -1672,9 +1672,9 @@ public class HomeActivity extends Activity {
                 .setTitle("Selecionar shader")
                 .setSingleChoiceItems(arr, idx, new android.content.DialogInterface.OnClickListener() {
                     public void onClick(android.content.DialogInterface d, int which) {
+                        // so troca a shader; nao mexe nos ajustes de imagem (filtro)
                         ShaderTools.setCurrentShader(HomeActivity.this, arr[which]);
                         fillShaderList();
-                        regenColor();
                         Toast.makeText(HomeActivity.this, "Shader: " + arr[which],
                                 Toast.LENGTH_SHORT).show();
                         d.dismiss();
@@ -1788,7 +1788,7 @@ public class HomeActivity extends Activity {
         rowActive.addView(shaderValActive, new LinearLayout.LayoutParams(-2, -2));
         panel.addView(rowActive, new LinearLayout.LayoutParams(-1, -2));
         TextView hint1 = new TextView(this);
-        hint1.setText("Vale a partir do proximo jogo aberto. Toque numa shader da lista ou em Selecionar shader.");
+        hint1.setText("Vale a partir do proximo jogo aberto. Escolher a shader nao altera os ajustes de imagem.");
         hint1.setTextColor(0xFF9A9AA2);
         hint1.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         hint1.setTypeface(bebas());
@@ -1825,6 +1825,20 @@ public class HomeActivity extends Activity {
             }
         });
         panel.addView(btns, new LinearLayout.LayoutParams(-1, -2));
+        final LinearLayout dlBox = new LinearLayout(this);
+        dlBox.setOrientation(LinearLayout.VERTICAL);
+        dlBox.setPadding(dp(16), dp(8), dp(16), 0);
+        dlBox.setVisibility(View.GONE);
+        final TextView dlLabel = new TextView(this);
+        dlLabel.setTextColor(0xFF333338);
+        dlLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        dlLabel.setTypeface(bebas());
+        dlBox.addView(dlLabel, new LinearLayout.LayoutParams(-1, -2));
+        final android.widget.ProgressBar dlBar = new android.widget.ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
+        dlBar.setMax(100);
+        dlBox.addView(dlBar, new LinearLayout.LayoutParams(-1, dp(14)));
+        panel.addView(dlBox, new LinearLayout.LayoutParams(-1, -2));
         TextView hintDl = new TextView(this);
         hintDl.setText("Importar: arquivos .dfx, .slang, .slangp ou .glsl. Baixar: puxa e converte as shaders do repositorio slang-shaders (libretro). Ajuste abaixo funciona junto com qualquer shader.");
         hintDl.setTextColor(0xFF9A9AA2);
@@ -1842,10 +1856,24 @@ public class HomeActivity extends Activity {
             public void onClick(View v) {
                 dl.setEnabled(false);
                 dl.setAlpha(0.5f);
-                ShaderTools.downloadAllShaders(HomeActivity.this, tree, new ShaderTools.Result() {
+                dlLabel.setText("Iniciando...");
+                dlBar.setIndeterminate(true);
+                dlBox.setVisibility(View.VISIBLE);
+                ShaderTools.downloadAllShaders(HomeActivity.this, tree, new ShaderTools.Progress() {
+                    public void update(String label, int percent) {
+                        dlLabel.setText(label);
+                        if (percent < 0) {
+                            dlBar.setIndeterminate(true);
+                        } else {
+                            dlBar.setIndeterminate(false);
+                            dlBar.setProgress(percent);
+                        }
+                    }
+                }, new ShaderTools.Result() {
                     public void done(String summary) {
                         dl.setEnabled(true);
                         dl.setAlpha(1f);
+                        dlBox.setVisibility(View.GONE);
                         Toast.makeText(HomeActivity.this, summary, Toast.LENGTH_LONG).show();
                         fillShaderList();
                     }

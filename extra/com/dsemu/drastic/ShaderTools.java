@@ -1523,26 +1523,47 @@ public final class ShaderTools {
         void done(String summary);
     }
 
+    /** Progresso do download (chamado na thread principal). percent < 0 = indeterminado. */
+    public interface Progress {
+        void update(String label, int percent);
+    }
+
+    private static void prog(final Progress p, final String label, final int percent) {
+        if (p == null) return;
+        ui(new Runnable() {
+            public void run() {
+                p.update(label, percent);
+            }
+        });
+    }
+
     /**
      * Baixa o repositorio libretro/slang-shaders e converte/instala o que der.
      * Chama cb.done(resumo) na thread principal.
      */
-    public static void downloadAllShaders(final Context ctx, final Uri tree, final Result cb) {
+    public static void downloadAllShaders(Context ctx, Uri tree, Result cb) {
+        downloadAllShaders(ctx, tree, null, cb);
+    }
+
+    public static void downloadAllShaders(final Context ctx, final Uri tree,
+                                          final Progress pg, final Result cb) {
         new Thread(new Runnable() {
             public void run() {
                 String summary;
                 File tmpZip = new File(ctx.getCacheDir(), "slang_shaders.zip");
                 File tmpDir = new File(ctx.getCacheDir(), "slang_shaders");
                 try {
-                    toast(ctx, "Baixando shaders do GitHub...");
-                    download(tmpZip);
-                    toast(ctx, "Extraindo...");
+                    if (pg == null) toast(ctx, "Baixando shaders do GitHub...");
+                    prog(pg, "Baixando shaders do GitHub...", 0);
+                    download(tmpZip, pg);
+                    if (pg == null) toast(ctx, "Extraindo...");
+                    prog(pg, "Extraindo...", -1);
                     rmrf(tmpDir);
                     tmpDir.mkdirs();
                     unzip(tmpZip, tmpDir);
                     File root = findFirstDir(tmpDir);
                     if (root == null) throw new Exception("zip estranho");
-                    summary = convertRepo(ctx, tree, root);
+                    summary = convertRepo(ctx, tree, root, pg);
                 } catch (Throwable e) {
                     summary = "Falhou: " + e;
                 } finally {
@@ -1571,18 +1592,34 @@ public final class ShaderTools {
         new Handler(Looper.getMainLooper()).post(r);
     }
 
-    private static void download(File dest) throws Exception {
+    private static void download(File dest, Progress pg) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(REPO_ZIP).openConnection();
         conn.setConnectTimeout(20000);
         conn.setReadTimeout(60000);
         conn.setInstanceFollowRedirects(true);
         int code = conn.getResponseCode();
         if (code != 200) throw new Exception("HTTP " + code);
+        long total = conn.getContentLength();
         InputStream in = conn.getInputStream();
         FileOutputStream out = new FileOutputStream(dest);
         byte[] buf = new byte[32768];
         int n;
-        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        long got = 0, last = 0;
+        while ((n = in.read(buf)) > 0) {
+            out.write(buf, 0, n);
+            got += n;
+            long now = System.currentTimeMillis();
+            if (pg != null && now - last > 150) {
+                last = now;
+                String mb = String.format(java.util.Locale.US, "%.1f MB", got / 1048576f);
+                if (total > 0) {
+                    int pc = (int) (got * 100L / total);
+                    prog(pg, "Baixando... " + mb + " (" + pc + "%)", pc);
+                } else {
+                    prog(pg, "Baixando... " + mb, -1);
+                }
+            }
+        }
         out.close();
         in.close();
         if (dest.length() < 1024) throw new Exception("download vazio");
@@ -1623,7 +1660,7 @@ public final class ShaderTools {
     }
 
     /** Converte e instala as presets/shaders de uma pasta extraida. */
-    static String convertRepo(Context ctx, Uri tree, File rootDir) {
+    static String convertRepo(Context ctx, Uri tree, File rootDir, Progress pg) {
         Uri dir = shadersDir(ctx, tree);
         if (dir == null) return "Nao achei a pasta de shaders";
         ensureBuiltins(ctx, tree);
@@ -1643,6 +1680,7 @@ public final class ShaderTools {
         HashSet<String> referenced = new HashSet<String>();
         HashSet<String> used = new HashSet<String>();
         int ok = 0, fail = 0, shown = 0;
+        final int totalItems = Math.max(1, presets.size() + singles.size());
         StringBuilder fails = new StringBuilder();
         for (File p : presets) {
             try {
@@ -1675,7 +1713,12 @@ public final class ShaderTools {
                 }
             }
             shown++;
-            if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            if (pg == null) {
+                if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            } else if (shown % 5 == 0 || shown == totalItems) {
+                prog(pg, "Convertendo shaders... " + shown + "/" + totalItems,
+                        Math.min(100, shown * 100 / totalItems));
+            }
         }
         for (File s : singles) {
             if (referenced.contains(fileStem(s.getName().toLowerCase()))) continue;
@@ -1694,7 +1737,12 @@ public final class ShaderTools {
                 fail++;
             }
             shown++;
-            if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            if (pg == null) {
+                if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            } else if (shown % 5 == 0 || shown == totalItems) {
+                prog(pg, "Convertendo shaders... " + shown + "/" + totalItems,
+                        Math.min(100, shown * 100 / totalItems));
+            }
         }
         String msg = ok + " shaders instaladas, " + fail + " nao suportadas";
         if (fails.length() > 0) msg += "\nEx.: " + fails;
