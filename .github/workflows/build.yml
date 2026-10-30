@@ -22,6 +22,20 @@ jobs:
           ls -la *.jar
       - name: Compilar
         run: java -jar apktool.jar b app -o out.apk
+      - name: Compilar tela inicial (Java) e juntar ao APK
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          AJAR=$(ls $SDK/platforms/android-*/android.jar | sort -V | tail -1)
+          D8=$(ls $SDK/build-tools/*/d8 | sort -V | tail -1)
+          echo "android.jar: $AJAR"; echo "d8: $D8"
+          mkdir -p jbuild/classes
+          javac -source 8 -target 8 -bootclasspath "$AJAR" -d jbuild/classes $(find extra -name '*.java')
+          "$D8" --lib "$AJAR" --min-api 21 --output jbuild $(find jbuild/classes -name '*.class')
+          N=$(unzip -Z1 out.apk | grep -cE '^classes[0-9]*\.dex$')
+          NEW=classes$((N+1)).dex
+          cp jbuild/classes.dex "jbuild/$NEW"
+          (cd jbuild && zip ../out.apk "$NEW")
+          unzip -Z1 out.apk | grep -E '^classes[0-9]*\.dex$'
       - name: Assinar
         run: java -jar signer.jar -a out.apk --allowResign -o signed
       - uses: actions/upload-artifact@v4
