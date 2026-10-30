@@ -1543,8 +1543,8 @@ public final class ShaderTools {
                     File root = findFirstDir(tmpDir);
                     if (root == null) throw new Exception("zip estranho");
                     summary = convertRepo(ctx, tree, root);
-                } catch (Exception e) {
-                    summary = "Falhou: " + e.getMessage();
+                } catch (Throwable e) {
+                    summary = "Falhou: " + e;
                 } finally {
                     rmrf(tmpDir);
                     tmpZip.delete();
@@ -1627,6 +1627,14 @@ public final class ShaderTools {
         Uri dir = shadersDir(ctx, tree);
         if (dir == null) return "Nao achei a pasta de shaders";
         ensureBuiltins(ctx, tree);
+        Uri probe = writeFile(ctx, dir, ".alphads_probe", new byte[]{1});
+        if (probe == null) {
+            return "Sem permissao de escrita na pasta de shaders. Escolha a pasta de novo no menu de shaders.";
+        }
+        try {
+            DocumentsContract.deleteDocument(ctx.getContentResolver(), probe);
+        } catch (Exception ignored) {
+        }
         List<File> presets = new ArrayList<File>();
         List<File> singles = new ArrayList<File>();
         collect(rootDir, presets, singles);
@@ -1660,7 +1668,7 @@ public final class ShaderTools {
                 }
                 snapshotPristine(ctx, tree, name);
                 ok++;
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 fail++;
                 if (fails.length() < 300) {
                     fails.append(p.getName()).append(" (").append(e.getMessage()).append("); ");
@@ -1682,7 +1690,7 @@ public final class ShaderTools {
                 }
                 snapshotPristine(ctx, tree, name);
                 ok++;
-            } catch (Exception ignoredFail) {
+            } catch (Throwable ignoredFail) {
                 fail++;
             }
             shown++;

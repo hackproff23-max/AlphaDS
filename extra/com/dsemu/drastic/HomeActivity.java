@@ -677,6 +677,7 @@ public class HomeActivity extends Activity {
     private void pickShaderFolder() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
                 | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
         startActivityForResult(i, REQ_TREE);
@@ -688,7 +689,8 @@ public class HomeActivity extends Activity {
         if (req == REQ_TREE && res == RESULT_OK && data != null && data.getData() != null) {
             Uri tree = data.getData();
             try {
-                getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                getContentResolver().takePersistableUriPermission(tree,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             } catch (Exception ignored) {
             }
             prefs.edit().putString("tree", tree.toString()).commit();
