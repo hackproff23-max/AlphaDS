@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -22,6 +23,8 @@ import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.util.TypedValue;
@@ -62,6 +65,7 @@ public class HomeActivity extends Activity {
     private BaseAdapter adapter;
     private TextView empty;
     private SharedPreferences prefs;
+    private static boolean splashDone = false;
     private float d;
     private int iconPx;
 
@@ -126,7 +130,80 @@ public class HomeActivity extends Activity {
         body.addView(empty, new FrameLayout.LayoutParams(-1, -1));
 
         root.addView(buildDock(grid), dockParams());
-        setContentView(root);
+
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackgroundColor(0xFF000000);
+        frame.addView(root, new FrameLayout.LayoutParams(-1, -1));
+        if (!splashDone) {
+            splashDone = true;
+            addSplash(frame);
+        }
+        setContentView(frame);
+    }
+
+    /** Mesma tela de carregamento do jogo, mostrada ao abrir o app. */
+    private void addSplash(FrameLayout frame) {
+        final LinearLayout splash = new LinearLayout(this);
+        splash.setOrientation(LinearLayout.VERTICAL);
+        splash.setGravity(Gravity.CENTER);
+        splash.setBackgroundColor(0xFF000000);
+        splash.setClickable(true);
+
+        Typeface tf = Typeface.DEFAULT_BOLD;
+        try {
+            tf = Typeface.createFromAsset(getAssets(), "fonts/BebasKai.ttf");
+        } catch (Exception ignored) {
+        }
+
+        ImageView logo = new ImageView(this);
+        try {
+            logo.setImageBitmap(BitmapFactory.decodeStream(getAssets().open("logo.png")));
+        } catch (Exception ignored) {
+        }
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(dp(140), dp(140));
+        llp.bottomMargin = dp(24);
+        splash.addView(logo, llp);
+
+        final TextView name = new TextView(this);
+        name.setTypeface(tf);
+        name.setTextColor(0xFFFFFFFF);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 64);
+        splash.addView(name, new LinearLayout.LayoutParams(-2, -2));
+
+        final TextView load = new TextView(this);
+        load.setTypeface(tf);
+        load.setTextColor(0xFF9E9E9E);
+        load.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
+        load.setPadding(0, dp(2), 0, 0);
+        splash.addView(load, new LinearLayout.LayoutParams(-2, -2));
+
+        frame.addView(splash, new FrameLayout.LayoutParams(-1, -1));
+
+        final Handler h = new Handler(Looper.getMainLooper());
+        final String n = "alphaDS";
+        final String c = "Carregando...";
+        h.post(new Runnable() {
+            int i = 0;
+
+            public void run() {
+                if (i <= n.length()) {
+                    name.setText(n.substring(0, i));
+                    i++;
+                    h.postDelayed(this, 80);
+                } else if (i <= n.length() + c.length() + 1) {
+                    load.setText(c.substring(0, i - n.length() - 1));
+                    i++;
+                    h.postDelayed(this, 40);
+                } else {
+                    splash.animate().setStartDelay(250).alpha(0f).setDuration(250)
+                            .withEndAction(new Runnable() {
+                                public void run() {
+                                    splash.setVisibility(View.GONE);
+                                }
+                            }).start();
+                }
+            }
+        });
     }
 
     private void goImmersive() {

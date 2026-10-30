@@ -1676,4 +1676,7 @@
         <item name="android:layout_marginRight">16.0dip</item>
         <item name="android:layout_marginBottom">0.0dip</item>
     </style>
+    <style name="AlphaSplash" parent="@android:style/Theme.NoTitleBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>
