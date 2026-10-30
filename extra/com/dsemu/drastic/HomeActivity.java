@@ -464,7 +464,217 @@ public class HomeActivity extends Activity {
 
     // ---------- pasta / varredura ----------
 
+    private boolean pendingPick;
+    private File browseDir;
+    private final ArrayList<File> browseDirs = new ArrayList<File>();
+
+    private boolean hasAllFiles() {
+        if (Build.VERSION.SDK_INT >= 30) return android.os.Environment.isExternalStorageManager();
+        if (Build.VERSION.SDK_INT >= 23) {
+            return checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        }
+        return true;
+    }
+
+    /** Botao amarelo: seletor de pasta proprio (sem abrir o gerenciador de arquivos). */
     private void pickFolder() {
+        if (hasAllFiles()) {
+            showFolderPicker();
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Permissao necessaria")
+                    .setMessage("Para ler a pasta dos jogos, ative \"Permitir gerenciar todos os arquivos\" para o AlphaDS na proxima tela e volte.")
+                    .setPositiveButton("Abrir", new android.content.DialogInterface.OnClickListener() {
+                        public void onClick(android.content.DialogInterface d, int w) {
+                            pendingPick = true;
+                            try {
+                                startActivity(new Intent(
+                                        android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                        Uri.parse("package:" + getPackageName())));
+                            } catch (Exception e) {
+                                startActivity(new Intent(
+                                        android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+                            }
+                        }
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+        } else {
+            pendingPick = true;
+            requestPermissions(new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE}, 21);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        if (req == 21 && pendingPick) {
+            pendingPick = false;
+            if (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                showFolderPicker();
+            }
+        }
+    }
+
+    private void fillBrowse(TextView path, ArrayList<String> names,
+                            android.widget.ArrayAdapter<String> ad) {
+        path.setText(browseDir.getAbsolutePath());
+        names.clear();
+        browseDirs.clear();
+        File parent = browseDir.getParentFile();
+        if (parent != null) {
+            names.add(".. (subir)");
+            browseDirs.add(parent);
+        }
+        File[] fs = browseDir.listFiles();
+        ArrayList<File> sub = new ArrayList<File>();
+        if (fs != null) {
+            for (File f : fs) {
+                if (f.isDirectory() && !f.getName().startsWith(".")) sub.add(f);
+            }
+        }
+        Collections.sort(sub, new Comparator<File>() {
+            public int compare(File a, File b) {
+                return a.getName().compareToIgnoreCase(b.getName());
+            }
+        });
+        for (File f : sub) {
+            names.add(f.getName() + "/");
+            browseDirs.add(f);
+        }
+        ad.notifyDataSetChanged();
+    }
+
+    private void showFolderPicker() {
+        String saved = prefs.getString("gamedir", null);
+        File start = saved != null ? new File(saved) : android.os.Environment.getExternalStorageDirectory();
+        if (!start.isDirectory()) start = android.os.Environment.getExternalStorageDirectory();
+        browseDir = start;
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(8), dp(16), 0);
+        final TextView path = new TextView(this);
+        path.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        path.setPadding(0, 0, 0, dp(8));
+        final android.widget.ListView list = new android.widget.ListView(this);
+        final ArrayList<String> names = new ArrayList<String>();
+        final android.widget.ArrayAdapter<String> ad = new android.widget.ArrayAdapter<String>(
+                this, android.R.layout.simple_list_item_1, names);
+        list.setAdapter(ad);
+        box.addView(path, new LinearLayout.LayoutParams(-1, -2));
+        box.addView(list, new LinearLayout.LayoutParams(-1, dp(320)));
+        list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> p, View v, int pos, long id) {
+                if (pos < 0 || pos >= browseDirs.size()) return;
+                browseDir = browseDirs.get(pos);
+                fillBrowse(path, names, ad);
+                list.setSelection(0);
+            }
+        });
+        fillBrowse(path, names, ad);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Pasta dos jogos")
+                .setView(box)
+                .setPositiveButton("Usar esta pasta", new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        prefs.edit().putString("gamedir", browseDir.getAbsolutePath()).commit();
+                        games.clear();
+                        adapter.notifyDataSetChanged();
+                        scan();
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void scanFiles(final File root) {
+        empty.setText("Procurando jogos...");
+        empty.setVisibility(View.VISIBLE);
+        new Thread(new Runnable() {
+            public void run() {
+                final List<Game> found = new ArrayList<Game>();
+                final boolean perm = hasAllFiles();
+                try {
+                    if (perm) walkFiles(root, found, 0);
+                } catch (Exception ignored) {
+                }
+                Collections.sort(found, new Comparator<Game>() {
+                    public int compare(Game a, Game b) {
+                        return a.title.compareToIgnoreCase(b.title);
+                    }
+                });
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        games.clear();
+                        games.addAll(found);
+                        adapter.notifyDataSetChanged();
+                        if (!perm) {
+                            empty.setText("Sem permissao para ler arquivos. Toque na pasta amarela");
+                            empty.setVisibility(View.VISIBLE);
+                        } else if (games.isEmpty()) {
+                            empty.setText("Nenhum jogo .nds encontrado nessa pasta");
+                            empty.setVisibility(View.VISIBLE);
+                        } else {
+                            empty.setVisibility(View.GONE);
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void walkFiles(File dir, List<Game> out, int depth) {
+        File[] fs = dir.listFiles();
+        if (fs == null) return;
+        for (File f : fs) {
+            String n = f.getName();
+            if (f.isDirectory()) {
+                if (depth < 3 && !n.startsWith(".")) walkFiles(f, out, depth + 1);
+            } else if (n.toLowerCase().endsWith(".nds")) {
+                Game g = readGameFile(f);
+                if (g != null) out.add(g);
+            }
+        }
+    }
+
+    private Game readGameFile(File f) {
+        String fileName = f.getName();
+        String title = fileName.substring(0, fileName.length() - 4);
+        Bitmap icon = null;
+        java.io.RandomAccessFile raf = null;
+        try {
+            raf = new java.io.RandomAccessFile(f, "r");
+            FileChannel ch = raf.getChannel();
+            byte[] h = readAt(ch, 0, 0x70);
+            int bo = le32(h, 0x68);
+            if (bo > 0) {
+                byte[] b = readAt(ch, bo & 0xFFFFFFFFL, 0x840);
+                String t = readTitle(b, 0x340);
+                if (t.length() == 0) t = readTitle(b, 0x240);
+                if (t.length() > 0) title = t;
+                icon = decodeIcon(b);
+            }
+        } catch (Exception ignored) {
+        } finally {
+            try {
+                if (raf != null) raf.close();
+            } catch (Exception ignored) {
+            }
+        }
+        Game g = new Game();
+        g.uri = Uri.fromFile(f);
+        g.title = title;
+        g.shown = rounded(icon);
+        return g;
+    }
+
+    private void pickShaderFolder() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
                 | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
@@ -656,10 +866,20 @@ public class HomeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (pendingPick && hasAllFiles()) {
+            pendingPick = false;
+            showFolderPicker();
+            return;
+        }
         if (games.isEmpty()) scan();
     }
 
     private void scan() {
+        final String gd = prefs.getString("gamedir", null);
+        if (gd != null) {
+            scanFiles(new File(gd));
+            return;
+        }
         final String saved = prefs.getString("tree", null);
         if (saved == null) {
             empty.setVisibility(View.VISIBLE);
@@ -1460,8 +1680,16 @@ public class HomeActivity extends Activity {
     private void showShaderMenu() {
         final Uri tree = treeUri();
         if (tree == null) {
-            Toast.makeText(this, "Escolha a pasta dos jogos primeiro (botao amarelo)",
-                    Toast.LENGTH_LONG).show();
+            new AlertDialog.Builder(this)
+                    .setTitle("Pasta dos shaders")
+                    .setMessage("Os shaders precisam de uma pasta de dados. Escolher agora?")
+                    .setPositiveButton("Escolher", new android.content.DialogInterface.OnClickListener() {
+                        public void onClick(android.content.DialogInterface d, int w) {
+                            pickShaderFolder();
+                        }
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
             return;
         }
         final FrameLayout overlay = new FrameLayout(this);
