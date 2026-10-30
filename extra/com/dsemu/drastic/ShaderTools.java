@@ -637,19 +637,138 @@ public final class ShaderTools {
         }
     }
 
+    /** Fonte de arquivos de apoio: primeiro o que foi escolhido junto, depois a pasta do arquivo. */
+    static class PickedSource implements FileSource {
+        final Map<String, byte[]> byLower;
+        final Map<String, byte[]> byNorm;
+        final FileSource fallback;
+
+        PickedSource(Map<String, byte[]> byLower, Map<String, byte[]> byNorm, FileSource fallback) {
+            this.byLower = byLower;
+            this.byNorm = byNorm;
+            this.fallback = fallback;
+        }
+
+        public byte[] get(String relPath) {
+            if (relPath == null) return null;
+            String p = relPath.replace('\\', '/');
+            String base = p.substring(p.lastIndexOf('/') + 1);
+            byte[] d = byLower.get(base.toLowerCase());
+            if (d != null) return d;
+            d = byNorm.get(normKey(base));
+            if (d != null) return d;
+            return fallback == null ? null : fallback.get(relPath);
+        }
+    }
+
+    /** Nome sem pontuacao/espacos/caixa, para achar "v4.0 High.dsd" mesmo se virou "v4_0_High.dsd". */
+    static String normKey(String name) {
+        return name.toLowerCase().replaceAll("[^a-z0-9]", "");
+    }
+
+    static boolean isMainShader(String ext) {
+        return ext.equals("dfx") || ext.equals("slang") || ext.equals("slangp")
+                || ext.equals("cgp") || ext.equals("glsl");
+    }
+
+    /**
+     * Importa varios arquivos escolhidos juntos. Os arquivos de apoio (.dsd, .slang, .png...)
+     * escolhidos na mesma selecao sao usados pelo arquivo principal (.dfx, .slangp...).
+     */
+    public static String importFiles(Context ctx, Uri tree, List<Uri> docs, List<String> names) {
+        Uri dir = shadersDir(ctx, tree);
+        if (dir == null) return "Nao achei a pasta de shaders";
+        try {
+            ensureBuiltins(ctx, tree);
+        } catch (Exception ignored) {
+        }
+        Map<String, byte[]> byLower = new HashMap<String, byte[]>();
+        Map<String, byte[]> byNorm = new HashMap<String, byte[]>();
+        int n = docs.size();
+        String[] nm = new String[n];
+        boolean hasDfx = false, hasPreset = false;
+        for (int i = 0; i < n; i++) {
+            nm[i] = names.get(i) != null ? names.get(i) : "shader " + (i + 1);
+            String ext = fileExt(nm[i]);
+            if (ext.equals("dfx")) hasDfx = true;
+            if (ext.equals("slangp") || ext.equals("cgp")) hasPreset = true;
+            byte[] d = readDoc(ctx, docs.get(i));
+            if (d != null) {
+                byLower.put(nm[i].toLowerCase(), d);
+                byNorm.put(normKey(nm[i]), d);
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        HashSet<String> used = new HashSet<String>();
+        for (int i = 0; i < n; i++) {
+            String ext = fileExt(nm[i]);
+            // arquivos de apoio escolhidos junto com um principal nao viram shader sozinhos
+            boolean support = false;
+            if (ext.equals("dsd") && hasDfx) support = true;
+            else if ((ext.equals("slang") || ext.equals("glsl")) && (hasDfx || hasPreset)) support = true;
+            else if (!isMainShader(ext) && !ext.equals("dsd") && (hasDfx || hasPreset)) support = true;
+            if (support) continue;
+            String r;
+            byte[] data = byLower.get(nm[i].toLowerCase());
+            if (data == null) {
+                r = nm[i] + ": nao consegui ler";
+            } else {
+                r = importOne(ctx, tree, dir, nm[i], data,
+                        new PickedSource(byLower, byNorm, new SafSource(ctx, tree, docs.get(i))), used);
+            }
+            if (sb.length() > 0) sb.append("\n");
+            sb.append(r);
+        }
+        if (sb.length() == 0) return "Escolha tambem o arquivo principal (.dfx, .slangp, .slang ou .glsl)";
+        return sb.toString();
+    }
+
+    private static String importOne(Context ctx, Uri tree, Uri dir, String displayName, byte[] data,
+                                    FileSource src, HashSet<String> used) {
+        try {
+            String ext = fileExt(displayName);
+            String outName = safeName(fileStem(displayName), used);
+            Build b;
+            if (ext.equals("dfx")) {
+                b = passthroughDfx(new String(data, "UTF-8"), src, outName);
+            } else if (ext.equals("slang")) {
+                b = convertSlangSingle(new String(data, "UTF-8"), src, outName, "");
+            } else if (ext.equals("glsl")) {
+                b = convertGlsl(new String(data, "UTF-8"), src, outName);
+            } else if (ext.equals("slangp") || ext.equals("cgp")) {
+                b = convertPreset(new String(data, "UTF-8"), src, outName, "");
+            } else if (ext.equals("dsd")) {
+                writeFile(ctx, dir, outName + ".dsd", data);
+                return outName + ".dsd copiado (use com um .dfx)";
+            } else {
+                return displayName + ": formato nao suportado (." + ext + ")";
+            }
+            writeFile(ctx, dir, outName + ".dfx", b.dfx.getBytes("UTF-8"));
+            for (Map.Entry<String, byte[]> e : b.files.entrySet()) {
+                writeFile(ctx, dir, e.getKey(), e.getValue());
+            }
+            snapshotPristine(ctx, tree, outName);
+            return outName + " importada";
+        } catch (Throwable e) {
+            return displayName + ": " + e;
+        }
+    }
+
     /** Copia um .dfx nativo reescrevendo os caminhos internos (.dsd, includes, texturas). */
     static Build passthroughDfx(String text, FileSource src, String outName) throws Exception {
         Build b = new Build();
         String t = text;
         Map<String, String> ren = new LinkedHashMap<String, String>();
-        Matcher m = Pattern.compile("(shader|file|input)\\s*=\\s*([^\\s=]+\\.(dsd|raw))",
-                Pattern.CASE_INSENSITIVE).matcher(t);
+        Matcher m = Pattern.compile("^\\s*(shader|file|input)\\s*=\\s*(.+?\\.(?:dsd|raw))\\s*$",
+                Pattern.CASE_INSENSITIVE | Pattern.MULTILINE).matcher(t);
         while (m.find()) {
             String ref = m.group(2);
             if (ren.containsKey(ref)) continue;
             byte[] data = src.get(ref);
-            if (data == null) throw new Exception("falta o arquivo " + ref);
-            String base = ref.substring(Math.max(ref.lastIndexOf('/'), ref.lastIndexOf('\\')) + 1);
+            if (data == null) throw new Exception("falta o arquivo " + ref
+                    + " (escolha ele junto com o .dfx)");
+            String base = ref.substring(Math.max(ref.lastIndexOf('/'), ref.lastIndexOf('\\')) + 1)
+                    .replace(' ', '_');
             String newName = outName.replaceAll(" ", "_") + "__" + base;
             ren.put(ref, newName);
             b.files.put(newName, data);

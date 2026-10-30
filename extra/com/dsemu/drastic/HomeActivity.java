@@ -731,15 +731,7 @@ public class HomeActivity extends Activity {
             if (tree == null || uris.isEmpty()) return;
             new Thread(new Runnable() {
                 public void run() {
-                    StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < uris.size(); i++) {
-                        String nm = names.get(i);
-                        if (nm == null) nm = "shader " + (i + 1);
-                        String r = ShaderTools.importFile(HomeActivity.this, tree, uris.get(i), nm);
-                        if (sb.length() > 0) sb.append("\n");
-                        sb.append(r);
-                    }
-                    final String msg = sb.toString();
+                    final String msg = ShaderTools.importFiles(HomeActivity.this, tree, uris, names);
                     runOnUiThread(new Runnable() {
                         public void run() {
                             Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_LONG).show();
