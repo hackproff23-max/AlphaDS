@@ -86,6 +86,12 @@ public class HomeActivity extends Activity {
     private BaseAdapter adapter;
     private TextView empty;
     private SharedPreferences prefs;
+    static volatile String keepTree;
+
+    public static boolean keep(Uri u) {
+        String k = keepTree;
+        return k != null && u != null && k.equals(u.toString());
+    }
     private static boolean splashDone = false;
     private float d;
     private int iconPx;
@@ -148,6 +154,7 @@ public class HomeActivity extends Activity {
         d = getResources().getDisplayMetrics().density;
         iconPx = dp(96);
         prefs = getSharedPreferences("alphads_home", MODE_PRIVATE);
+        keepTree = prefs.getString("tree", null);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -475,6 +482,7 @@ public class HomeActivity extends Activity {
             } catch (Exception ignored) {
             }
             prefs.edit().putString("tree", tree.toString()).commit();
+            keepTree = tree.toString();
             scan();
         } else if (req == REQ_IMPORT && res == RESULT_OK && data != null) {
             final ArrayList<Uri> uris = new ArrayList<Uri>();

@@ -350,7 +350,22 @@
 
     move-result-object v2
 
+    invoke-static {v2}, Lcom/dsemu/drastic/HomeActivity;->keep(Landroid/net/Uri;)Z
+
+    move-result v4
+
+    if-nez v4, :alpha_keep
+
     invoke-static {p0, v2, v3}, Lg0/b;->a(Landroid/content/ContentResolver;Landroid/net/Uri;I)V
+
+    goto :goto_0
+
+    :alpha_keep
+    invoke-static {v3}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+
+    move-result-object v3
+
+    invoke-interface {v1, v2, v3}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
 
     goto :goto_0
 
