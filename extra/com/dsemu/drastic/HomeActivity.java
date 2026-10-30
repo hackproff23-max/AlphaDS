@@ -28,6 +28,7 @@ import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.text.TextPaint;
+import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -49,6 +50,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.FileInputStream;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -304,7 +306,11 @@ public class HomeActivity extends Activity {
             }
         }));
         // verde: video
-        dock.addView(slot(IconView.VIDEO, 0xFF2E9E3E, 0xFFFFFFFF, soon("Opcoes de video")));
+        dock.addView(slot(IconView.VIDEO, 0xFF2E9E3E, 0xFFFFFFFF, new View.OnClickListener() {
+            public void onClick(View v) {
+                showVideoMenu();
+            }
+        }));
         // branco: controle
         dock.addView(slot(IconView.PAD, 0xFFFFFFFF, 0xFF3A3A3C, soon("Controle")));
         // cinza: configuracoes
@@ -1588,6 +1594,976 @@ public class HomeActivity extends Activity {
         overlay.addView(panel, new FrameLayout.LayoutParams(-1,
                 (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
         rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    // ---------- video (botao verde) ----------
+
+    /** Prefs nativas do DraStic: o emulador le esse arquivo ao abrir cada jogo. */
+    static final String DRA_PREFS = "_Dra$t1c_Pref$_";
+
+    private static final String[] VID_FS_LABELS = {"Nenhum", "Manual", "Auto"};
+    private static final String[] VID_LAT_LABELS = {"Baixa", "Media", "Alta", "Muito alta"};
+    private static final String[] VID_LAYOUT_LABELS = {
+            "Paisagem 1:1", "Paisagem x:1", "Retrato 1:1", "Paisagem proporcao", "Paisagem tela cheia",
+            "Personalizado"};
+    private static final String[] VID_ROT_LABELS = {"Auto", "Paisagem", "Paisagem invertida"};
+    private static final String[] VID_EXT_LABELS = {"Clonar dispositivo", "Proporcao correta", "Tela cheia"};
+    private static final String[] VID_EXTSCR_LABELS = {"Tela de cima", "Tela de baixo"};
+
+    private SharedPreferences draPrefs() {
+        return getSharedPreferences(DRA_PREFS, MODE_PRIVATE);
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    private TextView vidSection(String s) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(0xFF2E9E3E);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        t.setTypeface(bebas());
+        t.setPadding(0, dp(18), 0, dp(2));
+        return t;
+    }
+
+    private TextView vidHint(String s) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(0xFF9A9AA2);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        t.setTypeface(bebas());
+        t.setPadding(0, dp(2), 0, 0);
+        return t;
+    }
+
+    /** Linha "rotulo ... valor" (o mesmo formato do menu de shaders). */
+    private LinearLayout vidRow(String label, TextView val) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(10), 0, 0);
+        row.addView(menuLabel(label), new LinearLayout.LayoutParams(0, -2, 1f));
+        if (val != null) row.addView(val, new LinearLayout.LayoutParams(-2, -2));
+        return row;
+    }
+
+    /** Linha "rotulo ... switch". */
+    private LinearLayout vidSwitch(String label, Switch sw) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(10), 0, 0);
+        row.addView(menuLabel(label), new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(sw, new LinearLayout.LayoutParams(-2, -2));
+        return row;
+    }
+
+    private Switch vidSwitchNew(final boolean[] state, final Runnable onChange) {
+        Switch sw = new Switch(this);
+        sw.setTextColor(0xFF222222);
+        sw.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        sw.setChecked(state[0]);
+        sw.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                state[0] = checked;
+                onChange.run();
+            }
+        });
+        return sw;
+    }
+
+    /** Linha de opcao em ciclo: tocar na linha avanca para o proximo valor. */
+    private LinearLayout vidCycle(String label, final String[] labels, final int[] values,
+                                  final int[] cur, final List<Runnable> refreshers,
+                                  final Runnable onChange) {
+        final TextView val = menuValue();
+        final Runnable refresh = new Runnable() {
+            public void run() {
+                String name = labels[0];
+                for (int i = 0; i < values.length; i++) {
+                    if (values[i] == cur[0]) {
+                        name = labels[i];
+                        break;
+                    }
+                }
+                val.setText(name);
+            }
+        };
+        refresh.run();
+        refreshers.add(refresh);
+        LinearLayout row = vidRow(label, val);
+        row.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                int idx = 0;
+                for (int i = 0; i < values.length; i++) {
+                    if (values[i] == cur[0]) {
+                        idx = i;
+                        break;
+                    }
+                }
+                cur[0] = values[(idx + 1) % values.length];
+                refresh.run();
+                onChange.run();
+            }
+        });
+        return row;
+    }
+
+    /** Abre o menu de opcoes de video sobre a tela inicial.
+     *  Escreve direto nas preferencias nativas (_Dra$t1c_Pref$_); o emulador
+     *  le tudo de novo ao abrir o proximo jogo. */
+    private void showVideoMenu() {
+        final SharedPreferences p = draPrefs();
+
+        // texturas em baixa resolucao: o proprio app decide sozinho em telas pequenas
+        final boolean autoLow = Math.max(getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels) <= 800;
+
+        final int[] fsType = new int[]{clamp(p.getInt("_FrameskipType", 0), 0, 2)};
+        final int[] fsVal = new int[]{clamp(p.getInt("_FrameskipValue", 4), 0, 9)};
+        final boolean[] fsSafe = new boolean[]{p.getBoolean("_FrameskipSafe", false)};
+        final boolean[] threaded = new boolean[]{p.getBoolean("_Threaded3D", false)};
+        final int[] cpuLoad = new int[]{clamp(p.getInt("_CpuLoad", 0), 0, 100)};
+        final int[] latency = new int[]{clamp(p.getInt("_AudioLatency", 3), 0, 3)};
+        final boolean[] hires = new boolean[]{p.getBoolean("_Hires3D", false)};
+        final boolean[] bit16 = new boolean[]{p.getBoolean("_GlUse16Bit", false)};
+        final boolean[] lowres = new boolean[]{p.getBoolean("_UseLowResTextures", autoLow)};
+        final boolean[] noEdge = new boolean[]{p.getBoolean("_DisableEdgeMarking", false)};
+        final boolean[] glSleep = new boolean[]{p.getBoolean("_GlThreadSleep", true)};
+        final boolean[] fixMain = new boolean[]{p.getBoolean("_FixMainEngineScreen", false)};
+        final boolean[] showFps = new boolean[]{p.getBoolean("_ShowFPS", false)};
+        final boolean[] fpsTrans = new boolean[]{p.getBoolean("_FpsTransparent", true)};
+        final int[] layout = new int[]{clamp(p.getInt("_DefaultLayout", 0), 0, 5)};
+        final int[] rot = new int[]{clamp(p.getInt("_RotationMode", 0), 0, 2)};
+        final int[] extType = new int[]{clamp(p.getInt("_ExtDisplayType", 0), 0, 2)};
+        final int[] extScr = new int[]{clamp(p.getInt("_ExtDisplayScreen", 0), 0, 1)};
+
+        // salva tudo que esta na tela (sync = true grava na hora)
+        final Runnable persistLater = new Runnable() {
+            public void run() {
+                persistVideo(p, fsType[0], fsVal[0], fsSafe[0], threaded[0], cpuLoad[0],
+                        latency[0], hires[0], bit16[0], lowres[0], noEdge[0], glSleep[0],
+                        fixMain[0], showFps[0], fpsTrans[0], layout[0], rot[0], extType[0],
+                        extScr[0], false);
+            }
+        };
+        final Runnable persistSync = new Runnable() {
+            public void run() {
+                persistVideo(p, fsType[0], fsVal[0], fsSafe[0], threaded[0], cpuLoad[0],
+                        latency[0], hires[0], bit16[0], lowres[0], noEdge[0], glSleep[0],
+                        fixMain[0], showFps[0], fpsTrans[0], layout[0], rot[0], extType[0],
+                        extScr[0], true);
+            }
+        };
+
+        // switches criadas uma unica vez; guardadas para o botao Padrao
+        swFsSafe = vidSwitchNew(fsSafe, persistLater);
+        swThreaded = vidSwitchNew(threaded, persistLater);
+        swHires = vidSwitchNew(hires, persistLater);
+        swBit16 = vidSwitchNew(bit16, persistLater);
+        swLowres = vidSwitchNew(lowres, persistLater);
+        swEdge = vidSwitchNew(noEdge, persistLater);
+        swSleep = vidSwitchNew(glSleep, persistLater);
+        swFix = vidSwitchNew(fixMain, persistLater);
+        swFps = vidSwitchNew(showFps, persistLater);
+        swFpsT = vidSwitchNew(fpsTrans, persistLater);
+
+        final FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x66000000);
+        overlay.setClickable(true);
+
+        final Runnable closer = new Runnable() {
+            public void run() {
+                rootFrame.removeView(overlay);
+            }
+        };
+        overlay.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        ScrollView panel = new ScrollView(this);
+        panel.setVerticalScrollBarEnabled(false);
+        panel.setFillViewport(true);
+        panel.setClickable(true);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(0xFFF7F7F9);
+        pbg.setCornerRadii(new float[]{dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0});
+        panel.setBackgroundDrawable(pbg);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(12), dp(16), dp(20));
+        panel.addView(content, new FrameLayout.LayoutParams(-1, -2));
+
+        // cabecalho
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(this);
+        title.setText("Opcoes de video");
+        title.setTextColor(0xFF222222);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(bebas());
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView x = new TextView(this);
+        x.setText("X");
+        x.setTextColor(0xFF666666);
+        x.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        x.setTypeface(bebas());
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable xbg = new GradientDrawable();
+        xbg.setColor(0xFFE8E8EC);
+        xbg.setCornerRadius(dp(16));
+        x.setBackgroundDrawable(xbg);
+        x.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+        head.addView(x, new LinearLayout.LayoutParams(-2, -2));
+        content.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView hint0 = vidHint("Vale a partir do proximo jogo aberto. Toque numa opcao de valor "
+                + "para mudar. Sao as mesmas opcoes do menu interno do emulador.");
+        hint0.setPadding(0, dp(6), 0, 0);
+        content.addView(hint0, new LinearLayout.LayoutParams(-1, -2));
+
+        final List<Runnable> refreshers = new ArrayList<Runnable>();
+
+        // ===== desempenho =====
+        content.addView(vidSection("Desempenho"), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidCycle("Pular quadros", VID_FS_LABELS, new int[]{0, 1, 2}, fsType,
+                refreshers, persistLater), new LinearLayout.LayoutParams(-1, -2));
+
+        final TextView valFs = menuValue();
+        valFs.setText(String.valueOf(fsVal[0]));
+        content.addView(vidRow("Valor de quadros pulados", valFs), new LinearLayout.LayoutParams(-1, -2));
+        final SeekBar sbFs = new SeekBar(this);
+        sbFs.setMax(9);
+        sbFs.setProgress(fsVal[0]);
+        sbFs.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
+                fsVal[0] = pr;
+                valFs.setText(String.valueOf(pr));
+                persistLater.run();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+                persistSync.run();
+            }
+        });
+        content.addView(sbFs, new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidSwitch("Pular quadros seguro", swFsSafe),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidSwitch("Renderizacao 3D com varias threads", swThreaded),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Melhora o desempenho em jogos com muito 3D, mas pode causar "
+                + "falhas graficas (como telas trocadas) em alguns jogos. Se notar falhas "
+                + "na imagem, desative esta opcao."), new LinearLayout.LayoutParams(-1, -2));
+
+        final TextView valCpu = menuValue();
+        valCpu.setText(cpuLoad[0] + "%");
+        content.addView(vidRow("Estabilizador de FPS (carga de CPU)", valCpu),
+                new LinearLayout.LayoutParams(-1, -2));
+        final SeekBar sbCpu = new SeekBar(this);
+        sbCpu.setMax(100);
+        sbCpu.setProgress(cpuLoad[0]);
+        sbCpu.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
+                cpuLoad[0] = pr;
+                valCpu.setText(pr + "%");
+                persistLater.run();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+                persistSync.run();
+            }
+        });
+        content.addView(sbCpu, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("0 = desligado. Usa CPU extra para manter a taxa de quadros "
+                + "estavel; comece com valores baixos."), new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidCycle("Latencia de audio", VID_LAT_LABELS, new int[]{0, 1, 2, 3},
+                latency, refreshers, persistLater), new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== graficos =====
+        content.addView(vidSection("Graficos"), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidSwitch("Renderizacao 3D em alta resolucao", swHires),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Renderiza o 3D em 512x384 em vez de 256x192; imagem mais "
+                + "nitida, usa mais processamento."), new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidSwitch("Renderizacao em 16 bits", swBit16),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Ganha desempenho em aparelhos fracos; as cores ficam menos "
+                + "precisas."), new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidSwitch("Usar texturas em baixa resolucao", swLowres),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidSwitch("Desativar marcacao de bordas", swEdge),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidSwitch("Pausa na thread de renderizacao", swSleep),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Economiza bateria e esquentamento; pode derrubar um pouco o "
+                + "desempenho."), new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidSwitch("Manter a tela principal na tela de cima", swFix),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== tela =====
+        content.addView(vidSection("Tela"), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidSwitch("Mostrar FPS", swFps),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidSwitch("FPS transparente", swFpsT),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        content.addView(vidCycle("Layout padrao", VID_LAYOUT_LABELS, new int[]{0, 1, 2, 3, 4, 5},
+                layout, refreshers, persistLater), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidCycle("Rotacao", VID_ROT_LABELS, new int[]{0, 1, 2},
+                rot, refreshers, persistLater), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidCycle("Tela externa", VID_EXT_LABELS, new int[]{0, 1, 2},
+                extType, refreshers, persistLater), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidCycle("Tela da tela externa", VID_EXTSCR_LABELS, new int[]{0, 1},
+                extScr, refreshers, persistLater), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Tela externa: para jogar numa TV ou monitor via Cast/HDMI."),
+                new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== telas e controles =====
+        content.addView(vidSection("Telas e controles"), new LinearLayout.LayoutParams(-1, -2));
+
+        TextView btnEdScr = pillButton("Editar posicao das telas", 0xFF3D8BFF, 0xFFFFFFFF);
+        LinearLayout.LayoutParams esp = new LinearLayout.LayoutParams(-1, -2);
+        esp.topMargin = dp(10);
+        content.addView(btnEdScr, esp);
+        btnEdScr.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                showLayoutEditor(0);
+            }
+        });
+
+        TextView btnEdPad = pillButton("Editar controles na tela", 0xFF3D8BFF, 0xFFFFFFFF);
+        LinearLayout.LayoutParams epp = new LinearLayout.LayoutParams(-1, -2);
+        epp.topMargin = dp(8);
+        content.addView(btnEdPad, epp);
+        btnEdPad.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                showLayoutEditor(1);
+            }
+        });
+        content.addView(vidHint("Arraste para mover; arraste o quadradinho do canto para "
+                + "mudar o tamanho. Salvar cria o layout \"Personalizado\" e seleciona ele "
+                + "na hora de abrir um jogo."), new LinearLayout.LayoutParams(-1, -2));
+
+        final String[] sizeLabels = {"Pequena", "Media", "Grande"};
+        final float[] sizeVals = {0.70f, 0.85f, 1.0f};
+        final int[] sizeCur = new int[]{clamp(p.getInt("alphads_scrsize", 2), 0, 2)};
+        content.addView(vidCycle("Tamanho das telas", sizeLabels, new int[]{0, 1, 2},
+                sizeCur, refreshers, new Runnable() {
+                    public void run() {
+                        p.edit().putInt("alphads_scrsize", sizeCur[0]).commit();
+                        applyScreenScale(sizeVals[sizeCur[0]]);
+                    }
+                }), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Tamanho das telas no layout Personalizado (recalcula a "
+                + "posicao; os controles ficam como estao)."), new LinearLayout.LayoutParams(-1, -2));
+
+        final boolean[] haptic = new boolean[]{p.getBoolean("_HapticFeedback", true)};
+        final boolean[] noDiag = new boolean[]{p.getBoolean("_NoDiagonals", false)};
+        content.addView(vidSwitch("Vibracao ao tocar", vidSwitchNew(haptic, new Runnable() {
+            public void run() {
+                p.edit().putBoolean("_HapticFeedback", haptic[0]).commit();
+            }
+        })), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidSwitch("Nao usar diagonais no D-Pad", vidSwitchNew(noDiag, new Runnable() {
+            public void run() {
+                p.edit().putBoolean("_NoDiagonals", noDiag[0]).commit();
+            }
+        })), new LinearLayout.LayoutParams(-1, -2));
+
+        final float defAlpha = 0.45f;
+        final float padAlpha = p.getFloat("_ControllerAlpha", defAlpha);
+        final TextView valAlpha = menuValue();
+        valAlpha.setText(Math.round(padAlpha * 100f) + "%");
+        content.addView(vidRow("Transparencia dos controles", valAlpha),
+                new LinearLayout.LayoutParams(-1, -2));
+        SeekBar sbAlpha = new SeekBar(this);
+        sbAlpha.setMax(100);
+        sbAlpha.setProgress(Math.round(padAlpha * 100f));
+        sbAlpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
+                valAlpha.setText(pr + "%");
+                p.edit().putFloat("_ControllerAlpha", pr / 100f).apply();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+                p.edit().putFloat("_ControllerAlpha", s.getProgress() / 100f).commit();
+            }
+        });
+        content.addView(sbAlpha, new LinearLayout.LayoutParams(-1, -2));
+
+        final float defDead = 0.3f;
+        final float dead = p.getFloat("_AnalogDeadzone", defDead);
+        final TextView valDead = menuValue();
+        valDead.setText(Math.round(dead * 100f) + "%");
+        content.addView(vidRow("Zona morta do analogico", valDead),
+                new LinearLayout.LayoutParams(-1, -2));
+        SeekBar sbDead = new SeekBar(this);
+        sbDead.setMax(100);
+        sbDead.setProgress(Math.round(dead * 100f));
+        sbDead.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
+                valDead.setText(pr + "%");
+                p.edit().putFloat("_AnalogDeadzone", pr / 100f).apply();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+                p.edit().putFloat("_AnalogDeadzone", s.getProgress() / 100f).commit();
+            }
+        });
+        content.addView(sbDead, new LinearLayout.LayoutParams(-1, -2));
+
+        // rodape
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        TextView reset = pillButton("Padrao", 0xFFE8E8EC, 0xFF333338);
+        TextView closeBtn = pillButton("Fechar", 0xFF2E9E3E, 0xFFFFFFFF);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, -2, 1f);
+        rlp.rightMargin = dp(8);
+        btns.addView(reset, rlp);
+        btns.addView(closeBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        content.addView(btns, cwlp(18));
+
+        reset.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                fsType[0] = 0;
+                fsVal[0] = 4;
+                fsSafe[0] = false;
+                threaded[0] = false;
+                cpuLoad[0] = 0;
+                latency[0] = 3;
+                hires[0] = false;
+                bit16[0] = false;
+                lowres[0] = autoLow;
+                noEdge[0] = false;
+                glSleep[0] = true;
+                fixMain[0] = false;
+                showFps[0] = false;
+                fpsTrans[0] = true;
+                layout[0] = 0;
+                rot[0] = 0;
+                extType[0] = 0;
+                extScr[0] = 0;
+                persistVideo(p, fsType[0], fsVal[0], fsSafe[0], threaded[0], cpuLoad[0],
+                        latency[0], hires[0], bit16[0], lowres[0], noEdge[0], glSleep[0],
+                        fixMain[0], showFps[0], fpsTrans[0], layout[0], rot[0], extType[0],
+                        extScr[0], true);
+                sbFs.setProgress(4);
+                sbCpu.setProgress(0);
+                valFs.setText("4");
+                valCpu.setText("0%");
+                swFsSafe.setChecked(false);
+                swThreaded.setChecked(false);
+                swHires.setChecked(false);
+                swBit16.setChecked(false);
+                swLowres.setChecked(autoLow);
+                swEdge.setChecked(false);
+                swSleep.setChecked(true);
+                swFix.setChecked(false);
+                swFps.setChecked(false);
+                swFpsT.setChecked(true);
+                for (int i = 0; i < refreshers.size(); i++) {
+                    refreshers.get(i).run();
+                }
+            }
+        });
+        closeBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        overlay.addView(panel, new FrameLayout.LayoutParams(-1,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
+        rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private Switch swFsSafe, swThreaded, swHires, swBit16, swLowres, swEdge, swSleep, swFix,
+            swFps, swFpsT;
+
+    // ---------- editor de telas e controles ----------
+
+    /** Layout "Personalizado": gravado no config/LC_5.dat do DraStic. */
+    private static final int CUST_LAYOUT = 5;
+
+    /** Retangulo simples usado pelo editor (em pixels reais de tela). */
+    private static class R {
+        int x, y, w, h;
+        boolean v = true;
+
+        R(int x, int y, int w, int h) {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+        }
+    }
+
+    private R[] edScr;   // [0] = tela de cima, [1] = tela de baixo
+    private R[] edPad;   // 9 areas do controle (dpad, botoes, L, R, ...)
+    private boolean edSwap;      // flag de troca gravada junto
+    private boolean[] edPadVis;  // flags de visibilidade gravadas junto
+
+    private static final String[] PAD_NAMES = {
+            "D-Pad", "Botoes", "L", "R", "Start", "Select", "Menu", "Extra 1", "Extra 2"};
+    private static final int[] PAD_COLORS = {
+            0xFF3D8BFF, 0xFFE53935, 0xFFFFA000, 0xFFFFA000, 0xFF2E9E3E, 0xFF2E9E3E,
+            0xFF8E24AA, 0xFF00897B, 0xFFD81B60};
+
+    private void edDefaults(float f, boolean sideBySide) {
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int W = dm.widthPixels;
+        int H = dm.heightPixels;
+        int w, h;
+        if (sideBySide) {
+            w = (int) (W * f);
+            h = w * 3 / 4;
+            if (h * 2 > H * f) {
+                h = (int) (H * f) / 2;
+                w = h * 4 / 3;
+            }
+            int x0 = (W - w * 2) / 2;
+            int y0 = (H - h) / 2;
+            edScr[0] = new R(x0, y0, w, h);
+            edScr[1] = new R(x0 + w + dp(4), y0, w, h);
+        } else {
+            w = (int) (W * f);
+            h = w * 3 / 4;
+            if (h * 2 > H * f) {
+                h = (int) (H * f) / 2;
+                w = h * 4 / 3;
+            }
+            int x0 = (W - w) / 2;
+            int y0 = (H - h * 2) / 2;
+            edScr[0] = new R(x0, y0, w, h);
+            edScr[1] = new R(x0, y0 + h + dp(4), w, h);
+        }
+
+        int s = (int) (Math.min(W, H) * 0.24f);
+        int m = (int) (Math.min(W, H) * 0.02f);
+        if (sideBySide && W >= H) {
+            edPad[0] = new R(m, H - s - m, s, s);
+            edPad[1] = new R(W - s - m, H - s - m, s, s);
+        } else {
+            edPad[0] = new R(m, H - s - m, s, s);
+            edPad[1] = new R(W - s - m, H - s - m, s, s);
+        }
+        int sh = (int) (s * 0.55f);
+        edPad[2] = new R(m, m, sh, sh);
+        edPad[3] = new R(W - sh - m, m, sh, sh);
+        int ss = (int) (s * 0.45f);
+        edPad[4] = new R(W / 2 - ss - dp(6), H - ss - m, ss, ss);
+        edPad[5] = new R(W / 2 + dp(6), H - ss - m, ss, ss);
+        int mn = (int) (s * 0.4f);
+        edPad[6] = new R(W - mn - m, (int) (m + sh * 1.3f), mn, mn);
+        edPad[7] = new R(0, 0, 0, 0);
+        edPad[7].v = false;
+        edPad[8] = new R(0, 0, 0, 0);
+        edPad[8].v = false;
+        edPadVis = new boolean[]{true, true, true, true};
+        edSwap = false;
+    }
+
+    private void edDefaultsNow() {
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        edDefaults(1.0f, dm.widthPixels >= dm.heightPixels);
+    }
+
+    private static Object edNew(String cls) throws Exception {
+        return Class.forName(cls).newInstance();
+    }
+
+    private static void edSetRect(Object holder, String field, R r) throws Exception {
+        Object m = holder.getClass().getField(field).get(holder);
+        Class c = m.getClass();
+        c.getField("a").setInt(m, r.x);
+        c.getField("b").setInt(m, r.y);
+        c.getField("c").setInt(m, r.w);
+        c.getField("d").setInt(m, r.h);
+        c.getField("e").setBoolean(m, r.v);
+    }
+
+    private static R edGetRect(Object holder, String field) throws Exception {
+        Object m = holder.getClass().getField(field).get(holder);
+        Class c = m.getClass();
+        R r = new R(c.getField("a").getInt(m), c.getField("b").getInt(m),
+                c.getField("c").getInt(m), c.getField("d").getInt(m));
+        r.v = c.getField("e").getBoolean(m);
+        return r;
+    }
+
+    /** Le o layout personalizado (LC_5.dat); se nao existir, cria valores padrao. */
+    private void edLoadAll() {
+        edScr = new R[2];
+        edPad = new R[9];
+        edDefaultsNow();
+        try {
+            Class fh = Class.forName("f0.h");
+            String oldF = null;
+            try {
+                oldF = (String) fh.getField("f").get(null);
+            } catch (Throwable t2) {
+            }
+            fh.getField("f").set(null, "alphads.nds");
+            Object k = edNew("f0.k");
+            Object b = edNew("f0.b");
+            Object j = edNew("f0.j");
+            j.getClass().getField("b").set(j, "");
+            Method mz = fh.getMethod("z", android.content.Context.class,
+                    int.class, k.getClass(), b.getClass(), boolean.class, j.getClass());
+            boolean ok = ((Boolean) mz.invoke(null, this, CUST_LAYOUT, k, b, false, j)).booleanValue();
+            if (oldF != null) {
+                try {
+                    fh.getField("f").set(null, oldF);
+                } catch (Throwable t2) {
+                }
+            }
+            if (ok) {
+                edScr[0] = edGetRect(k, "a");
+                edScr[1] = edGetRect(k, "b");
+                edSwap = k.getClass().getField("c").getBoolean(k);
+                String[] bf = {"a", "b", "c", "d", "e", "f", "g", "h", "i"};
+                for (int i = 0; i < 9; i++) {
+                    edPad[i] = edGetRect(b, bf[i]);
+                }
+                edPadVis = new boolean[4];
+                String[] vf = {"j", "k", "l", "m"};
+                for (int i = 0; i < 4; i++) {
+                    edPadVis[i] = b.getClass().getField(vf[i]).getBoolean(b);
+                }
+            }
+        } catch (Throwable t) {
+            // sem layout salvo: segue com os padroes
+        }
+    }
+
+    /** Grava o layout personalizado e seleciona ele como layout padrao. */
+    private void edSaveAll() {
+        try {
+            Class fh = Class.forName("f0.h");
+            fh.getField("f").set(null, "alphads.nds");
+            Object k = edNew("f0.k");
+            Object b = edNew("f0.b");
+            Object j = edNew("f0.j");
+            j.getClass().getField("b").set(j, "");
+            edSetRect(k, "a", edScr[0]);
+            edSetRect(k, "b", edScr[1]);
+            k.getClass().getField("c").setBoolean(k, edSwap);
+            String[] bf = {"a", "b", "c", "d", "e", "f", "g", "h", "i"};
+            for (int i = 0; i < 9; i++) {
+                edSetRect(b, bf[i], edPad[i]);
+            }
+            String[] vf = {"j", "k", "l", "m"};
+            for (int i = 0; i < 4; i++) {
+                b.getClass().getField(vf[i]).setBoolean(b, edPadVis[i]);
+            }
+            Method me = fh.getMethod("E", android.content.Context.class,
+                    int.class, k.getClass(), b.getClass(), boolean.class, j.getClass());
+            me.invoke(null, this, CUST_LAYOUT, k, b, false, j);
+            draPrefs().edit().putInt("_DefaultLayout", CUST_LAYOUT).commit();
+        } catch (Throwable t) {
+            Toast.makeText(this, "Erro ao salvar o layout", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Recalcula as telas com outro tamanho e grava (usado pelo ciclo de tamanho). */
+    private void applyScreenScale(float f) {
+        edLoadAll();
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        edDefaults(f, dm.widthPixels >= dm.heightPixels);
+        edSaveAll();
+        Toast.makeText(this, "Tamanho aplicado; abra um jogo para ver", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Editor visual: mode 0 = telas, mode 1 = controles. */
+    private void showLayoutEditor(final int mode) {
+        edLoadAll();
+
+        final FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0xEE101014);
+        overlay.setClickable(true);
+
+        final Runnable closer = new Runnable() {
+            public void run() {
+                rootFrame.removeView(overlay);
+            }
+        };
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(dp(14), dp(10), dp(14), dp(6));
+        TextView title = new TextView(this);
+        title.setText(mode == 0 ? "Editar telas" : "Editar controles");
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(bebas());
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView x = new TextView(this);
+        x.setText("X");
+        x.setTextColor(0xFF333338);
+        x.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        x.setTypeface(bebas());
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable xbg = new GradientDrawable();
+        xbg.setColor(0xFFE8E8EC);
+        xbg.setCornerRadius(dp(16));
+        x.setBackgroundDrawable(xbg);
+        x.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+        head.addView(x, new LinearLayout.LayoutParams(-2, -2));
+        col.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView hint = new TextView(this);
+        hint.setText(mode == 0
+                ? "Arraste as telas. Toque no canto inferior direito e arraste para redimensionar."
+                : "Arraste cada controle. Toque no canto inferior direito e arraste para mudar o tamanho.");
+        hint.setTextColor(0xFF9A9AA2);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        hint.setTypeface(bebas());
+        hint.setPadding(dp(14), 0, dp(14), dp(6));
+        col.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+
+        final EditorView ev = new EditorView(this, mode);
+        col.addView(ev, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setPadding(dp(10), dp(8), dp(10), dp(14));
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2);
+        blp.rightMargin = dp(8);
+        if (mode == 0) {
+            TextView st = pillButton("Empilhadas", 0xFF333338, 0xFFFFFFFF);
+            st.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    DisplayMetrics dm = getResources().getDisplayMetrics();
+                    edDefaults(edScreenScale(), false);
+                    ev.invalidate();
+                }
+            });
+            bar.addView(st, blp);
+            TextView sd = pillButton("Lado a lado", 0xFF333338, 0xFFFFFFFF);
+            sd.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    edDefaults(edScreenScale(), true);
+                    ev.invalidate();
+                }
+            });
+            bar.addView(sd, blp);
+            TextView swp = pillButton("Trocar", 0xFF333338, 0xFFFFFFFF);
+            swp.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    R tmp = edScr[0];
+                    edScr[0] = edScr[1];
+                    edScr[1] = tmp;
+                    ev.invalidate();
+                }
+            });
+            bar.addView(swp, blp);
+        }
+        TextView rst = pillButton("Padrao", 0xFF333338, 0xFFFFFFFF);
+        rst.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                edDefaultsNow();
+                ev.invalidate();
+            }
+        });
+        bar.addView(rst, blp);
+        TextView save = pillButton("Salvar", 0xFF2E9E3E, 0xFFFFFFFF);
+        save.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                edSaveAll();
+                Toast.makeText(HomeActivity.this,
+                        "Layout salvo como Personalizado; abra um jogo para ver",
+                        Toast.LENGTH_SHORT).show();
+                closer.run();
+            }
+        });
+        bar.addView(save, new LinearLayout.LayoutParams(-2, -2));
+        col.addView(bar, new LinearLayout.LayoutParams(-1, -2));
+
+        overlay.addView(col, new FrameLayout.LayoutParams(-1, -1));
+        rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private float edScreenScale() {
+        int i = clamp(draPrefs().getInt("alphads_scrsize", 2), 0, 2);
+        return new float[]{0.70f, 0.85f, 1.0f}[i];
+    }
+
+    /** Area de desenho do editor: mostra os retangulos e trata o arraste. */
+    private class EditorView extends View {
+        private final int mode;
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int sel = -1;
+        private boolean resizing;
+        private float sc = 1f;
+        private int ox, oy;
+
+        EditorView(Context c, int m) {
+            super(c);
+            mode = m;
+        }
+
+        private R item(int i) {
+            return mode == 0 ? edScr[i] : edPad[i];
+        }
+
+        private int itemCount() {
+            return mode == 0 ? 2 : 9;
+        }
+
+        @Override
+        protected void onSizeChanged(int vw, int vh, int ow, int oh) {
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            sc = Math.min(vw / (float) dm.widthPixels, vh / (float) dm.heightPixels);
+            ox = (int) ((vw - dm.widthPixels * sc) / 2f);
+            oy = (int) ((vh - dm.heightPixels * sc) / 2f);
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            cv.drawColor(0xFF000000);
+            for (int i = 0; i < itemCount(); i++) {
+                R r = item(i);
+                if (r == null || r.w <= 0 || r.h <= 0) continue;
+                float lx = ox + r.x * sc;
+                float ty = oy + r.y * sc;
+                float lw = r.w * sc;
+                float lh = r.h * sc;
+                int color = mode == 0 ? (i == 0 ? 0xFF3D8BFF : 0xFFFFA000) : PAD_COLORS[i];
+                p.setStyle(Paint.Style.FILL);
+                p.setColor((color & 0x00FFFFFF) | 0x33000000);
+                cv.drawRect(lx, ty, lx + lw, ty + lh, p);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(i == sel ? dp(3) : dp(2));
+                p.setColor(color);
+                cv.drawRect(lx, ty, lx + lw, ty + lh, p);
+                if (i == sel) {
+                    p.setStyle(Paint.Style.FILL);
+                    cv.drawRect(lx + lw - dp(18), ty + lh - dp(18), lx + lw, ty + lh, p);
+                }
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(0xFFFFFFFF);
+                p.setTextSize(dp(12));
+                String nm = mode == 0 ? (i == 0 ? "CIMA" : "BAIXO") : PAD_NAMES[i];
+                cv.drawText(nm, lx + dp(6), ty + dp(16), p);
+            }
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent e) {
+            float tx = (e.getX() - ox) / sc;
+            float ty = (e.getY() - oy) / sc;
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN: {
+                    sel = -1;
+                    resizing = false;
+                    int bestArea = Integer.MAX_VALUE;
+                    for (int i = 0; i < itemCount(); i++) {
+                        R r = item(i);
+                        if (r == null || r.w <= 0 || r.h <= 0) continue;
+                        int pad = dp(10);
+                        if (tx >= r.x - pad && tx <= r.x + r.w + pad
+                                && ty >= r.y - pad && ty <= r.y + r.h + pad) {
+                            int area = r.w * r.h;
+                            if (area <= bestArea) {
+                                bestArea = area;
+                                sel = i;
+                                resizing = tx > r.x + r.w - dp(24) && ty > r.y + r.h - dp(24);
+                            }
+                        }
+                    }
+                    invalidate();
+                    return true;
+                }
+                case MotionEvent.ACTION_MOVE: {
+                    if (sel < 0) return true;
+                    R r = item(sel);
+                    DisplayMetrics dm = getResources().getDisplayMetrics();
+                    if (resizing) {
+                        r.w = clamp((int) tx - r.x, dp(30), dm.widthPixels - r.x);
+                        r.h = clamp((int) ty - r.y, dp(30), dm.heightPixels - r.y);
+                    } else {
+                        r.x = clamp((int) tx - r.w / 2, 0, dm.widthPixels - r.w);
+                        r.y = clamp((int) ty - r.h / 2, 0, dm.heightPixels - r.h);
+                    }
+                    invalidate();
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+            }
+            return true;
+        }
+    }
+
+    /** Grava todas as opcoes de video nas preferencias nativas do emulador. */
+    private void persistVideo(SharedPreferences p, int fsType, int fsVal, boolean fsSafe,
+                              boolean threaded, int cpuLoad, int latency, boolean hires,
+                              boolean bit16, boolean lowres, boolean noEdge, boolean glSleep,
+                              boolean fixMain, boolean showFps, boolean fpsTrans, int layout,
+                              int rot, int extType, int extScr, boolean sync) {
+        SharedPreferences.Editor e = p.edit();
+        e.putInt("_FrameskipType", clamp(fsType, 0, 2));
+        e.putInt("_FrameskipValue", clamp(fsVal, 0, 9));
+        e.putBoolean("_FrameskipSafe", fsSafe);
+        e.putBoolean("_Threaded3D", threaded);
+        e.putInt("_CpuLoad", clamp(cpuLoad, 0, 100));
+        e.putInt("_AudioLatency", clamp(latency, 0, 3));
+        e.putBoolean("_Hires3D", hires);
+        e.putBoolean("_GlUse16Bit", bit16);
+        e.putBoolean("_UseLowResTextures", lowres);
+        e.putBoolean("_DisableEdgeMarking", noEdge);
+        e.putBoolean("_GlThreadSleep", glSleep);
+        e.putBoolean("_FixMainEngineScreen", fixMain);
+        e.putBoolean("_ShowFPS", showFps);
+        e.putBoolean("_FpsTransparent", fpsTrans);
+        e.putInt("_DefaultLayout", clamp(layout, 0, 5));
+        e.putInt("_RotationMode", clamp(rot, 0, 2));
+        e.putInt("_ExtDisplayType", clamp(extType, 0, 2));
+        e.putInt("_ExtDisplayScreen", clamp(extScr, 0, 1));
+        if (sync) e.commit();
+        else e.apply();
     }
 
     // ---------- icones simples desenhados em codigo ----------
