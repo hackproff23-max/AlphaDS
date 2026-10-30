@@ -1621,7 +1621,7 @@ public class HomeActivity extends Activity {
         shaderListBox.removeAllViews();
         String cur = ShaderTools.currentShader(this);
         HashSet<String> seen = new HashSet<String>();
-        String[] builtins = {"Linear", "None", "Point"};
+        String[] builtins = {"Linear", "None"};
         for (String b : builtins) {
             seen.add(b);
             shaderListBox.addView(shaderRow(b, b.equals(cur)));
@@ -1655,6 +1655,33 @@ public class HomeActivity extends Activity {
             }
         });
         return t;
+    }
+
+    /** Dialogo para escolher a shader ativa entre as instaladas. */
+    private void showShaderPicker() {
+        final List<String> names = new ArrayList<String>();
+        names.add("Linear");
+        names.add("None");
+        for (String n : ShaderTools.installedShaders(this, treeUri())) {
+            if (!names.contains(n)) names.add(n);
+        }
+        String cur = ShaderTools.currentShader(this);
+        int idx = names.indexOf(cur);
+        final String[] arr = names.toArray(new String[0]);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Selecionar shader")
+                .setSingleChoiceItems(arr, idx, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        ShaderTools.setCurrentShader(HomeActivity.this, arr[which]);
+                        fillShaderList();
+                        regenColor();
+                        Toast.makeText(HomeActivity.this, "Shader: " + arr[which],
+                                Toast.LENGTH_SHORT).show();
+                        d.dismiss();
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private String docName(Uri doc) {
@@ -1761,7 +1788,7 @@ public class HomeActivity extends Activity {
         rowActive.addView(shaderValActive, new LinearLayout.LayoutParams(-2, -2));
         panel.addView(rowActive, new LinearLayout.LayoutParams(-1, -2));
         TextView hint1 = new TextView(this);
-        hint1.setText("Vale a partir do proximo jogo aberto. Toque numa shader da lista para ativar.");
+        hint1.setText("Vale a partir do proximo jogo aberto. Toque numa shader da lista ou em Selecionar shader.");
         hint1.setTextColor(0xFF9A9AA2);
         hint1.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         hint1.setTypeface(bebas());
@@ -1788,6 +1815,15 @@ public class HomeActivity extends Activity {
         blp.rightMargin = dp(8);
         btns.addView(imp, blp);
         btns.addView(dl, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView sel = pillButton("Selecionar shader", 0xFF3D8BFF, 0xFFFFFFFF);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+        slp.setMargins(dp(16), dp(4), dp(16), dp(8));
+        panel.addView(sel, slp);
+        sel.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                showShaderPicker();
+            }
+        });
         panel.addView(btns, new LinearLayout.LayoutParams(-1, -2));
         TextView hintDl = new TextView(this);
         hintDl.setText("Importar: arquivos .dfx, .slang, .slangp ou .glsl. Baixar: puxa e converte as shaders do repositorio slang-shaders (libretro). Ajuste abaixo funciona junto com qualquer shader.");

@@ -54,7 +54,7 @@ public final class ShaderTools {
     /** Subpasta que guarda as versoes originais (sem ajuste) dos .dfx. */
     static final String PRISTINE_DIR = ".alphads_orig";
 
-    static final String[] BUILTIN_FX = {"Linear", "None", "Point"};
+    static final String[] BUILTIN_FX = {"Linear", "None"};
 
     // ============================ pasta de shaders (SAF) ============================
 
