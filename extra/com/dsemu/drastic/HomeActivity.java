@@ -54,11 +54,13 @@ import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 
 /** Tela inicial do AlphaDS: grade de jogos + barra de icones embaixo. */
 public class HomeActivity extends Activity {
     private static final int REQ_TREE = 11;
+    private static final int REQ_IMPORT = 12;
     private static final int GLOW = 0xFF3D8BFF;
 
     private static class Game {
@@ -82,6 +84,15 @@ public class HomeActivity extends Activity {
     private static final int DEF_TXT_COLOR = 0xFF222222;
     private static final int DEF_TXT_OUTLINE_COLOR = 0xFF000000;
     private static final int DEF_TXT_BG = 0xFFFFFFFF;
+    private static final int DEF_TXT_SHADOW_COLOR = 0x99000000;
+
+    private static final int[] SHADOW_COLORS = {
+            0x99000000, 0xCC000000, 0x66000000, 0x33FFFFFF, 0xFFFFFFFF, 0xFF000000,
+            0xFF444444, 0xFF888888, 0xFFCCCCCC, 0xFF3D8BFF, 0xFFE53935, 0xFFFFA000,
+            0xFF2E9E3E
+    };
+
+    private static Typeface sBebas;
 
     private static final int[] TXT_COLORS = {
             0xFF000000, 0xFF444444, 0xFF888888, 0xFFCCCCCC, 0xFFFFFFFF, 0xFF795548,
@@ -91,6 +102,18 @@ public class HomeActivity extends Activity {
 
     private int dp(float v) {
         return (int) (v * d + 0.5f);
+    }
+
+    /** Fonte do app inteiro (BebasKai, dos assets), carregada uma vez. */
+    private Typeface bebas() {
+        if (sBebas == null) {
+            try {
+                sBebas = Typeface.createFromAsset(getAssets(), "fonts/BebasKai.ttf");
+            } catch (Exception e) {
+                sBebas = Typeface.DEFAULT_BOLD;
+            }
+        }
+        return sBebas;
     }
 
     @Override
@@ -116,7 +139,7 @@ public class HomeActivity extends Activity {
         title.setText("AlphaDS");
         title.setTextColor(0xFF222222);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTypeface(bebas());
         title.setPadding(dp(20), dp(12), dp(20), dp(4));
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
@@ -145,6 +168,7 @@ public class HomeActivity extends Activity {
         empty = new TextView(this);
         empty.setText("Toque na pasta amarela para escolher a pasta dos seus jogos");
         empty.setTextColor(0xFF666666);
+        empty.setTypeface(bebas());
         empty.setGravity(Gravity.CENTER);
         empty.setPadding(dp(32), 0, dp(32), 0);
         body.addView(empty, new FrameLayout.LayoutParams(-1, -1));
@@ -170,11 +194,7 @@ public class HomeActivity extends Activity {
         splash.setBackgroundColor(0xFF000000);
         splash.setClickable(true);
 
-        Typeface tf = Typeface.DEFAULT_BOLD;
-        try {
-            tf = Typeface.createFromAsset(getAssets(), "fonts/BebasKai.ttf");
-        } catch (Exception ignored) {
-        }
+        Typeface tf = bebas();
 
         ImageView logo = new ImageView(this);
         try {
@@ -278,7 +298,11 @@ public class HomeActivity extends Activity {
             }
         }));
         // azul: shaders
-        dock.addView(slot(IconView.SHADER, 0xFF1565C0, 0xFFFFFFFF, soon("Shaders")));
+        dock.addView(slot(IconView.SHADER, 0xFF1565C0, 0xFFFFFFFF, new View.OnClickListener() {
+            public void onClick(View v) {
+                showShaderMenu();
+            }
+        }));
         // verde: video
         dock.addView(slot(IconView.VIDEO, 0xFF2E9E3E, 0xFFFFFFFF, soon("Opcoes de video")));
         // branco: controle
@@ -300,7 +324,7 @@ public class HomeActivity extends Activity {
     private View slot(int type, int bg, int fg, View.OnClickListener l) {
         FrameLayout f = new FrameLayout(this);
         f.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 1f));
-        IconView v = new IconView(this, type, bg, fg);
+        IconView v = new IconView(this, type, bg, fg, bebas());
         v.setOnClickListener(l);
         pressScale(v);
         f.addView(v, new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.CENTER));
@@ -421,6 +445,44 @@ public class HomeActivity extends Activity {
             }
             prefs.edit().putString("tree", tree.toString()).commit();
             scan();
+        } else if (req == REQ_IMPORT && res == RESULT_OK && data != null) {
+            final ArrayList<Uri> uris = new ArrayList<Uri>();
+            final ArrayList<String> names = new ArrayList<String>();
+            if (data.getData() != null) {
+                uris.add(data.getData());
+                names.add(docName(data.getData()));
+            }
+            android.content.ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null) {
+                        uris.add(u);
+                        names.add(docName(u));
+                    }
+                }
+            }
+            final Uri tree = treeUri();
+            if (tree == null || uris.isEmpty()) return;
+            new Thread(new Runnable() {
+                public void run() {
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < uris.size(); i++) {
+                        String nm = names.get(i);
+                        if (nm == null) nm = "shader " + (i + 1);
+                        String r = ShaderTools.importFile(HomeActivity.this, tree, uris.get(i), nm);
+                        if (sb.length() > 0) sb.append("\n");
+                        sb.append(r);
+                    }
+                    final String msg = sb.toString();
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_LONG).show();
+                            fillShaderList();
+                        }
+                    });
+                }
+            }).start();
         }
     }
 
@@ -633,6 +695,10 @@ public class HomeActivity extends Activity {
         return prefs.getBoolean("txt_shadow", false);
     }
 
+    private int txtShadowColor() {
+        return prefs.getInt("txt_shadow_color", DEF_TXT_SHADOW_COLOR);
+    }
+
     private int txtColor() {
         return prefs.getInt("txt_color", DEF_TXT_COLOR);
     }
@@ -647,7 +713,8 @@ public class HomeActivity extends Activity {
 
     /** Aplica o estilo salvo a um rotulo de jogo. */
     private void applyTextStyle(StyledTextView tv) {
-        tv.setTextStyle(txtSize(), txtColor(), txtOutline(), txtOutlineColor(), txtShadow());
+        tv.setTextStyle(txtSize(), txtColor(), txtOutline(), txtOutlineColor(), txtShadow(),
+                txtShadowColor());
         int bg = txtBg();
         if (Color.alpha(bg) == 0) {
             tv.setBackgroundDrawable(null);
@@ -664,8 +731,8 @@ public class HomeActivity extends Activity {
     }
 
     private void stylePreview(StyledTextView tv, int[] size, int[] outline, boolean[] shadow,
-                              int[] color, int[] ocolor, int[] bg) {
-        tv.setTextStyle(size[0], color[0], outline[0], ocolor[0], shadow[0]);
+                              int[] color, int[] ocolor, int[] bg, int[] scol) {
+        tv.setTextStyle(size[0], color[0], outline[0], ocolor[0], shadow[0], scol[0]);
         if (Color.alpha(bg[0]) == 0) {
             tv.setBackgroundDrawable(null);
         } else {
@@ -675,7 +742,7 @@ public class HomeActivity extends Activity {
 
     /** Salva as opcoes atuais e atualiza os rotulos da grade. */
     private void persistText(int[] size, int[] outline, boolean[] shadow,
-                             int[] color, int[] ocolor, int[] bg) {
+                             int[] color, int[] ocolor, int[] bg, int[] scol) {
         prefs.edit()
                 .putInt("txt_size", size[0])
                 .putInt("txt_outline", outline[0])
@@ -683,6 +750,7 @@ public class HomeActivity extends Activity {
                 .putInt("txt_color", color[0])
                 .putInt("txt_outline_color", ocolor[0])
                 .putInt("txt_bg", bg[0])
+                .putInt("txt_shadow_color", scol[0])
                 .apply();
         if (adapter != null) adapter.notifyDataSetChanged();
     }
@@ -692,7 +760,7 @@ public class HomeActivity extends Activity {
         t.setText(s);
         t.setTextColor(0xFF55555C);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTypeface(bebas());
         return t;
     }
 
@@ -700,7 +768,7 @@ public class HomeActivity extends Activity {
         TextView t = new TextView(this);
         t.setTextColor(0xFF3D8BFF);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTypeface(bebas());
         return t;
     }
 
@@ -709,7 +777,7 @@ public class HomeActivity extends Activity {
         t.setText(s);
         t.setTextColor(fg);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTypeface(bebas());
         t.setGravity(Gravity.CENTER);
         t.setPadding(0, dp(10), 0, dp(10));
         GradientDrawable g = new GradientDrawable();
@@ -764,13 +832,13 @@ public class HomeActivity extends Activity {
         title.setText("Opcoes de texto");
         title.setTextColor(0xFF222222);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTypeface(bebas());
         head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView x = new TextView(this);
         x.setText("X");
         x.setTextColor(0xFF666666);
         x.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        x.setTypeface(Typeface.DEFAULT_BOLD);
+        x.setTypeface(bebas());
         x.setGravity(Gravity.CENTER);
         x.setPadding(dp(14), dp(6), dp(14), dp(6));
         GradientDrawable xbg = new GradientDrawable();
@@ -808,6 +876,7 @@ public class HomeActivity extends Activity {
         final int[] color = new int[]{txtColor()};
         final int[] ocolor = new int[]{txtOutlineColor()};
         final int[] bg = new int[]{txtBg()};
+        final int[] scol = new int[]{txtShadowColor()};
 
         final TextView sizeVal = menuValue();
         sizeVal.setText(size[0] + " sp");
@@ -828,17 +897,21 @@ public class HomeActivity extends Activity {
 
         final Runnable onChange = new Runnable() {
             public void run() {
-                stylePreview(preview, size, outline, shadow, color, ocolor, bg);
-                persistText(size, outline, shadow, color, ocolor, bg);
+                stylePreview(preview, size, outline, shadow, color, ocolor, bg, scol);
+                persistText(size, outline, shadow, color, ocolor, bg, scol);
             }
         };
 
         final SwatchRow colorRow = new SwatchRow(color, onChange);
         final SwatchRow ocolorRow = new SwatchRow(ocolor, onChange);
         final SwatchRow bgRow = new SwatchRow(bg, onChange);
+        final SwatchRow scolRow = new SwatchRow(scol, onChange);
         for (int i = 0; i < TXT_COLORS.length; i++) {
             colorRow.add(TXT_COLORS[i]);
             ocolorRow.add(TXT_COLORS[i]);
+        }
+        for (int i = 0; i < SHADOW_COLORS.length; i++) {
+            scolRow.add(SHADOW_COLORS[i]);
         }
         bgRow.add(0x00000000); // primeira opcao: fundo transparente
         for (int i = 0; i < TXT_COLORS.length; i++) {
@@ -907,6 +980,12 @@ public class HomeActivity extends Activity {
         rowShadow.addView(swShadow, new LinearLayout.LayoutParams(-2, -2));
         content.addView(rowShadow, new LinearLayout.LayoutParams(-1, -2));
 
+        // cor da sombra
+        TextView lblScol = menuLabel("Cor da sombra");
+        lblScol.setPadding(0, dp(14), 0, dp(6));
+        content.addView(lblScol, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(scolRow.build(), cwlp(0));
+
         // cores
         TextView lblColor = menuLabel("Cor da letra");
         lblColor.setPadding(0, dp(14), 0, dp(6));
@@ -926,6 +1005,7 @@ public class HomeActivity extends Activity {
         hintBg.setText("Na cor do fundo, a primeira opcao deixa o fundo transparente");
         hintBg.setTextColor(0xFF9A9AA2);
         hintBg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        hintBg.setTypeface(bebas());
         hintBg.setPadding(0, dp(4), 0, 0);
         content.addView(hintBg, new LinearLayout.LayoutParams(-1, -2));
 
@@ -948,6 +1028,7 @@ public class HomeActivity extends Activity {
                 color[0] = DEF_TXT_COLOR;
                 ocolor[0] = DEF_TXT_OUTLINE_COLOR;
                 bg[0] = DEF_TXT_BG;
+                scol[0] = DEF_TXT_SHADOW_COLOR;
                 sbSize.setProgress(DEF_TXT_SIZE - 8);
                 sbOutline.setProgress(DEF_TXT_OUTLINE);
                 swShadow.setChecked(false);
@@ -956,6 +1037,7 @@ public class HomeActivity extends Activity {
                 colorRow.refresh();
                 ocolorRow.refresh();
                 bgRow.refresh();
+                scolRow.refresh();
                 onChange.run();
             }
         });
@@ -966,10 +1048,11 @@ public class HomeActivity extends Activity {
         });
 
         // estado inicial da previa e dos aneis de selecao
-        stylePreview(preview, size, outline, shadow, color, ocolor, bg);
+        stylePreview(preview, size, outline, shadow, color, ocolor, bg, scol);
         colorRow.refresh();
         ocolorRow.refresh();
         bgRow.refresh();
+        scolRow.refresh();
 
         overlay.addView(panel, new FrameLayout.LayoutParams(-1,
                 (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
@@ -1037,53 +1120,474 @@ public class HomeActivity extends Activity {
         }
     }
 
-    /** TextView que desenha contorno e sombra no texto (nomes dos jogos e previa). */
+    /** TextView que desenha sombra e contorno no texto (nomes dos jogos e previa).
+     *  Cada passada usa a propria cor: sombra, contorno e letra sao independentes. */
     private class StyledTextView extends TextView {
         private int outlineDp;
         private int outlineColor;
         private boolean shadowOn;
+        private int shadowColor;
 
         StyledTextView(Context c) {
             super(c);
+            setTypeface(bebas());
         }
 
-        void setTextStyle(int sizeSp, int color, int outline, int ocolor, boolean shadow) {
+        void setTextStyle(int sizeSp, int color, int outline, int ocolor, boolean shadow,
+                          int scol) {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
             setTextColor(color);
             outlineDp = outline;
             outlineColor = ocolor;
             shadowOn = shadow;
+            shadowColor = scol;
             invalidate();
         }
 
         @Override
         protected void onDraw(Canvas cv) {
+            int fillColor = getCurrentTextColor();
             if (outlineDp <= 0 && !shadowOn) {
+                getPaint().setColor(fillColor);
                 super.onDraw(cv);
                 return;
             }
             TextPaint tp = getPaint();
             Paint.Style keepStyle = tp.getStyle();
-            int keepColor = tp.getColor();
+            float keepW = tp.getStrokeWidth();
             float dens = getResources().getDisplayMetrics().density;
+            // 1) sombra: passada separada, com a cor da sombra e deslocamento fixo
+            if (shadowOn) {
+                tp.setStyle(Paint.Style.FILL);
+                tp.setStrokeWidth(0f);
+                tp.setColor(shadowColor);
+                cv.save();
+                cv.translate(2f * dens, 3f * dens);
+                super.onDraw(cv);
+                cv.restore();
+            }
+            // 2) contorno: passada STROKE com a cor do contorno (nao a cor da letra)
             if (outlineDp > 0) {
                 tp.setStyle(Paint.Style.STROKE);
                 tp.setStrokeWidth(outlineDp * 2f * dens); // 2x: metade fica embaixo do preenchimento
                 tp.setColor(outlineColor);
-                if (shadowOn) {
-                    tp.setShadowLayer(3f * dens, dens, 2f * dens, 0x99000000);
-                }
-                super.onDraw(cv); // passada do contorno
-                tp.clearShadowLayer();
-                tp.setStyle(keepStyle);
-                tp.setStrokeWidth(0f);
-                tp.setColor(keepColor);
-            } else if (shadowOn) {
-                tp.setShadowLayer(3f * dens, dens, 2f * dens, 0x99000000);
+                super.onDraw(cv);
             }
-            super.onDraw(cv); // preenchimento
-            tp.clearShadowLayer();
+            // 3) letra: preenchimento com a cor da letra
+            tp.setStyle(keepStyle);
+            tp.setStrokeWidth(keepW);
+            tp.setColor(fillColor);
+            super.onDraw(cv);
         }
+    }
+
+    // ---------- shaders (botao azul) ----------
+
+    private LinearLayout shaderListBox;
+    private TextView shaderValActive;
+
+    private Uri treeUri() {
+        String t = prefs.getString("tree", null);
+        return t == null ? null : Uri.parse(t);
+    }
+
+    private static float sliderVal(int p, float lo, float hi) {
+        return lo + (hi - lo) * p / 100f;
+    }
+
+    private static int sliderPos(float v, float lo, float hi) {
+        int p = Math.round((v - lo) * 100f / (hi - lo));
+        return Math.max(0, Math.min(100, p));
+    }
+
+    private String pct(float v) {
+        return Math.round(v * 100f) + "%";
+    }
+
+    /** Reaplica brilho/contraste/cor/gamma na shader ativa (fora da thread principal). */
+    private void regenColor() {
+        final Uri tree = treeUri();
+        if (tree == null) return;
+        final float b = prefs.getFloat("sh_bright", 1f);
+        final float c = prefs.getFloat("sh_contrast", 1f);
+        final float s = prefs.getFloat("sh_sat", 1f);
+        final float g = prefs.getFloat("sh_gamma", 1f);
+        new Thread(new Runnable() {
+            public void run() {
+                final String err = ShaderTools.applyColorSettings(HomeActivity.this, tree, b, c, s, g);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (err != null) {
+                            Toast.makeText(HomeActivity.this, err, Toast.LENGTH_SHORT).show();
+                        }
+                        fillShaderList();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void fillShaderList() {
+        if (shaderListBox == null) return;
+        shaderListBox.removeAllViews();
+        String cur = ShaderTools.currentShader(this);
+        HashSet<String> seen = new HashSet<String>();
+        String[] builtins = {"Linear", "None", "Point"};
+        for (String b : builtins) {
+            seen.add(b);
+            shaderListBox.addView(shaderRow(b, b.equals(cur)));
+        }
+        List<String> inst = ShaderTools.installedShaders(this, treeUri());
+        for (String n : inst) {
+            if (seen.contains(n)) continue;
+            seen.add(n);
+            shaderListBox.addView(shaderRow(n, n.equals(cur)));
+        }
+        if (shaderValActive != null) shaderValActive.setText(cur);
+    }
+
+    private View shaderRow(final String name, final boolean active) {
+        TextView t = new TextView(this);
+        t.setText(name);
+        t.setTypeface(bebas());
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        t.setTextColor(active ? 0xFF3D8BFF : 0xFF333338);
+        t.setPadding(dp(12), dp(9), dp(12), dp(9));
+        GradientDrawable bgd = new GradientDrawable();
+        bgd.setColor(active ? 0x1A3D8BFF : 0x00000000);
+        bgd.setCornerRadius(dp(10));
+        bgd.setStroke(active ? dp(2) : 0, active ? 0xFF3D8BFF : 0);
+        t.setBackgroundDrawable(bgd);
+        t.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                ShaderTools.setCurrentShader(HomeActivity.this, name);
+                fillShaderList();
+                regenColor();
+            }
+        });
+        return t;
+    }
+
+    private String docName(Uri doc) {
+        Cursor c = null;
+        try {
+            c = getContentResolver().query(doc, new String[]{
+                    android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null);
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (Exception ignored) {
+        } finally {
+            if (c != null) c.close();
+        }
+        return null;
+    }
+
+    private void openImport() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        startActivityForResult(i, REQ_IMPORT);
+    }
+
+    /** Abre o menu de shaders sobre a tela inicial. */
+    private void showShaderMenu() {
+        final Uri tree = treeUri();
+        if (tree == null) {
+            Toast.makeText(this, "Escolha a pasta dos jogos primeiro (botao amarelo)",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        final FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x66000000);
+        overlay.setClickable(true);
+        final Runnable closer = new Runnable() {
+            public void run() {
+                shaderListBox = null;
+                shaderValActive = null;
+                rootFrame.removeView(overlay);
+            }
+        };
+        overlay.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setClickable(true);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(0xFFF7F7F9);
+        pbg.setCornerRadii(new float[]{dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0});
+        panel.setBackgroundDrawable(pbg);
+
+        // cabecalho
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(dp(16), dp(10), dp(10), dp(4));
+        TextView title = new TextView(this);
+        title.setText("Shaders");
+        title.setTextColor(0xFF222222);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(bebas());
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView x = new TextView(this);
+        x.setText("X");
+        x.setTextColor(0xFF666666);
+        x.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        x.setTypeface(bebas());
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable xbg = new GradientDrawable();
+        xbg.setColor(0xFFE8E8EC);
+        xbg.setCornerRadius(dp(16));
+        x.setBackgroundDrawable(xbg);
+        x.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+        head.addView(x, new LinearLayout.LayoutParams(-2, -2));
+        panel.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        // shader ativa
+        LinearLayout rowActive = new LinearLayout(this);
+        rowActive.setOrientation(LinearLayout.HORIZONTAL);
+        rowActive.setGravity(Gravity.CENTER_VERTICAL);
+        rowActive.setPadding(dp(16), dp(6), dp(16), 0);
+        TextView lblActive = menuLabel("Shader ativa:");
+        lblActive.setPadding(0, 0, dp(8), 0);
+        shaderValActive = menuValue();
+        shaderValActive.setText(ShaderTools.currentShader(this));
+        rowActive.addView(lblActive, new LinearLayout.LayoutParams(-2, -2));
+        rowActive.addView(shaderValActive, new LinearLayout.LayoutParams(-2, -2));
+        panel.addView(rowActive, new LinearLayout.LayoutParams(-1, -2));
+        TextView hint1 = new TextView(this);
+        hint1.setText("Vale a partir do proximo jogo aberto. Toque numa shader da lista para ativar.");
+        hint1.setTextColor(0xFF9A9AA2);
+        hint1.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        hint1.setTypeface(bebas());
+        hint1.setPadding(dp(16), dp(2), dp(16), 0);
+        panel.addView(hint1, new LinearLayout.LayoutParams(-1, -2));
+
+        // lista de shaders instaladas
+        shaderListBox = new LinearLayout(this);
+        shaderListBox.setOrientation(LinearLayout.VERTICAL);
+        shaderListBox.setPadding(dp(10), dp(6), dp(10), dp(6));
+        ScrollView listScroll = new ScrollView(this);
+        listScroll.setVerticalScrollBarEnabled(false);
+        listScroll.addView(shaderListBox, new FrameLayout.LayoutParams(-1, -2));
+        panel.addView(listScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        fillShaderList();
+
+        // importar / baixar
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        btns.setPadding(dp(16), dp(4), dp(16), 0);
+        TextView imp = pillButton("Importar shader", 0xFF1565C0, 0xFFFFFFFF);
+        final TextView dl = pillButton("Baixar todas", 0xFF2E9E3E, 0xFFFFFFFF);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(0, -2, 1f);
+        blp.rightMargin = dp(8);
+        btns.addView(imp, blp);
+        btns.addView(dl, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(btns, new LinearLayout.LayoutParams(-1, -2));
+        TextView hintDl = new TextView(this);
+        hintDl.setText("Importar: arquivos .dfx, .slang, .slangp ou .glsl. Baixar: puxa e converte as shaders do repositorio slang-shaders (libretro). Ajuste abaixo funciona junto com qualquer shader.");
+        hintDl.setTextColor(0xFF9A9AA2);
+        hintDl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        hintDl.setTypeface(bebas());
+        hintDl.setPadding(dp(16), dp(4), dp(16), 0);
+        panel.addView(hintDl, new LinearLayout.LayoutParams(-1, -2));
+
+        imp.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                openImport();
+            }
+        });
+        dl.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                dl.setEnabled(false);
+                dl.setAlpha(0.5f);
+                ShaderTools.downloadAllShaders(HomeActivity.this, tree, new ShaderTools.Result() {
+                    public void done(String summary) {
+                        dl.setEnabled(true);
+                        dl.setAlpha(1f);
+                        Toast.makeText(HomeActivity.this, summary, Toast.LENGTH_LONG).show();
+                        fillShaderList();
+                    }
+                });
+            }
+        });
+
+        // ajustes de imagem (brilho, contraste, cor, gamma)
+        TextView lblAdj = menuLabel("Ajustes de imagem");
+        lblAdj.setPadding(dp(16), dp(12), 0, 0);
+        panel.addView(lblAdj, new LinearLayout.LayoutParams(-1, -2));
+
+        final float loBC = 0.25f, hiBC = 3.0f, hiSat = 2.0f;
+        final float[] b = new float[]{prefs.getFloat("sh_bright", 1f)};
+        final float[] c = new float[]{prefs.getFloat("sh_contrast", 1f)};
+        final float[] s = new float[]{prefs.getFloat("sh_sat", 1f)};
+        final float[] g = new float[]{prefs.getFloat("sh_gamma", 1f)};
+
+        LinearLayout rowB = new LinearLayout(this);
+        rowB.setOrientation(LinearLayout.HORIZONTAL);
+        rowB.setGravity(Gravity.CENTER_VERTICAL);
+        rowB.setPadding(dp(16), dp(8), dp(16), 0);
+        rowB.addView(menuLabel("Brilho"), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView valB = menuValue();
+        valB.setText(pct(b[0]));
+        rowB.addView(valB, new LinearLayout.LayoutParams(-2, -2));
+        panel.addView(rowB, new LinearLayout.LayoutParams(-1, -2));
+        final SeekBar sbB = new SeekBar(this);
+        sbB.setMax(100);
+        sbB.setProgress(sliderPos(b[0], loBC, hiBC));
+        sbB.setPadding(dp(12), 0, dp(12), 0);
+        panel.addView(sbB, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout rowC = new LinearLayout(this);
+        rowC.setOrientation(LinearLayout.HORIZONTAL);
+        rowC.setGravity(Gravity.CENTER_VERTICAL);
+        rowC.setPadding(dp(16), dp(6), dp(16), 0);
+        rowC.addView(menuLabel("Contraste"), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView valC = menuValue();
+        valC.setText(pct(c[0]));
+        rowC.addView(valC, new LinearLayout.LayoutParams(-2, -2));
+        panel.addView(rowC, new LinearLayout.LayoutParams(-1, -2));
+        final SeekBar sbC = new SeekBar(this);
+        sbC.setMax(100);
+        sbC.setProgress(sliderPos(c[0], loBC, hiBC));
+        sbC.setPadding(dp(12), 0, dp(12), 0);
+        panel.addView(sbC, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout rowS = new LinearLayout(this);
+        rowS.setOrientation(LinearLayout.HORIZONTAL);
+        rowS.setGravity(Gravity.CENTER_VERTICAL);
+        rowS.setPadding(dp(16), dp(6), dp(16), 0);
+        rowS.addView(menuLabel("Cor (saturacao)"), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView valS = menuValue();
+        valS.setText(pct(s[0]));
+        rowS.addView(valS, new LinearLayout.LayoutParams(-2, -2));
+        panel.addView(rowS, new LinearLayout.LayoutParams(-1, -2));
+        final SeekBar sbS = new SeekBar(this);
+        sbS.setMax(100);
+        sbS.setProgress(sliderPos(s[0], 0f, hiSat));
+        sbS.setPadding(dp(12), 0, dp(12), 0);
+        panel.addView(sbS, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout rowG = new LinearLayout(this);
+        rowG.setOrientation(LinearLayout.HORIZONTAL);
+        rowG.setGravity(Gravity.CENTER_VERTICAL);
+        rowG.setPadding(dp(16), dp(6), dp(16), 0);
+        rowG.addView(menuLabel("Gamma"), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView valG = menuValue();
+        valG.setText(String.format(java.util.Locale.US, "%.2f", g[0]));
+        rowG.addView(valG, new LinearLayout.LayoutParams(-2, -2));
+        panel.addView(rowG, new LinearLayout.LayoutParams(-1, -2));
+        final SeekBar sbG = new SeekBar(this);
+        sbG.setMax(100);
+        sbG.setProgress(sliderPos(g[0], loBC, hiBC));
+        sbG.setPadding(dp(12), 0, dp(12), 0);
+        panel.addView(sbG, new LinearLayout.LayoutParams(-1, -2));
+
+        sbB.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                b[0] = sliderVal(p, loBC, hiBC);
+                valB.setText(pct(b[0]));
+                prefs.edit().putFloat("sh_bright", b[0]).apply();
+            }
+
+            public void onStartTrackingTouch(SeekBar sb) {
+            }
+
+            public void onStopTrackingTouch(SeekBar sb) {
+                regenColor();
+            }
+        });
+        sbC.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                c[0] = sliderVal(p, loBC, hiBC);
+                valC.setText(pct(c[0]));
+                prefs.edit().putFloat("sh_contrast", c[0]).apply();
+            }
+
+            public void onStartTrackingTouch(SeekBar sb) {
+            }
+
+            public void onStopTrackingTouch(SeekBar sb) {
+                regenColor();
+            }
+        });
+        sbS.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                s[0] = sliderVal(p, 0f, hiSat);
+                valS.setText(pct(s[0]));
+                prefs.edit().putFloat("sh_sat", s[0]).apply();
+            }
+
+            public void onStartTrackingTouch(SeekBar sb) {
+            }
+
+            public void onStopTrackingTouch(SeekBar sb) {
+                regenColor();
+            }
+        });
+        sbG.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                g[0] = sliderVal(p, loBC, hiBC);
+                valG.setText(String.format(java.util.Locale.US, "%.2f", g[0]));
+                prefs.edit().putFloat("sh_gamma", g[0]).apply();
+            }
+
+            public void onStartTrackingTouch(SeekBar sb) {
+            }
+
+            public void onStopTrackingTouch(SeekBar sb) {
+                regenColor();
+            }
+        });
+
+        // rodape
+        LinearLayout foot = new LinearLayout(this);
+        foot.setOrientation(LinearLayout.HORIZONTAL);
+        foot.setPadding(dp(16), dp(10), dp(16), dp(16));
+        TextView rst = pillButton("Cor padrao", 0xFFE8E8EC, 0xFF333338);
+        TextView closeBtn = pillButton("Fechar", 0xFF3D8BFF, 0xFFFFFFFF);
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(0, -2, 1f);
+        flp.rightMargin = dp(8);
+        foot.addView(rst, flp);
+        foot.addView(closeBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        panel.addView(foot, new LinearLayout.LayoutParams(-1, -2));
+
+        rst.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                b[0] = 1f;
+                c[0] = 1f;
+                s[0] = 1f;
+                g[0] = 1f;
+                sbB.setProgress(sliderPos(1f, loBC, hiBC));
+                sbC.setProgress(sliderPos(1f, loBC, hiBC));
+                sbS.setProgress(sliderPos(1f, 0f, hiSat));
+                sbG.setProgress(sliderPos(1f, loBC, hiBC));
+                valB.setText(pct(1f));
+                valC.setText(pct(1f));
+                valS.setText(pct(1f));
+                valG.setText(String.format(java.util.Locale.US, "%.2f", 1f));
+                prefs.edit().putFloat("sh_bright", 1f).putFloat("sh_contrast", 1f)
+                        .putFloat("sh_sat", 1f).putFloat("sh_gamma", 1f).apply();
+                regenColor();
+            }
+        });
+        closeBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        overlay.addView(panel, new FrameLayout.LayoutParams(-1,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
+        rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
     }
 
     // ---------- icones simples desenhados em codigo ----------
@@ -1091,15 +1595,17 @@ public class HomeActivity extends Activity {
     private static class IconView extends View {
         static final int HOME = 0, TEXT = 1, FOLDER = 2, SHADER = 3, VIDEO = 4, PAD = 5, GEAR = 6;
         private final int type, bg, fg;
+        private final Typeface tf;
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path path = new Path();
         private final RectF r = new RectF();
 
-        IconView(Context c, int type, int bg, int fg) {
+        IconView(Context c, int type, int bg, int fg, Typeface font) {
             super(c);
             this.type = type;
             this.bg = bg;
             this.fg = fg;
+            this.tf = font;
         }
 
         private void star(float cx, float cy, float big, float small) {
@@ -1147,7 +1653,7 @@ public class HomeActivity extends Activity {
                     cv.drawPath(path, p);
                     break;
                 case TEXT:
-                    p.setTypeface(Typeface.DEFAULT_BOLD);
+                    p.setTypeface(tf);
                     p.setTextSize(38);
                     p.setTextAlign(Paint.Align.CENTER);
                     cv.drawText("Aa", 50, 50 - (p.ascent() + p.descent()) / 2f, p);
