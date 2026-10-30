@@ -11,6 +11,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
 /** Mantem o download das shaders rodando mesmo com o app fora da tela. */
 public class ShaderDownloadService extends Service {
     static final String CHANNEL = "alphads_shader_dl";
@@ -22,8 +26,14 @@ public class ShaderDownloadService extends Service {
     }
 
     public static void start(Context ctx, Uri tree) {
+        start(ctx, tree, null);
+    }
+
+    /** only = pastas do repositorio a instalar (null = todas). */
+    public static void start(Context ctx, Uri tree, String[] only) {
         Intent i = new Intent(ctx, ShaderDownloadService.class);
         i.putExtra("tree", tree.toString());
+        if (only != null) i.putExtra("only", only);
         if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i);
         else ctx.startService(i);
     }
@@ -59,10 +69,12 @@ public class ShaderDownloadService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        String[] on = intent.getStringArrayExtra("only");
+        final Set<String> only = on == null ? null : new HashSet<String>(Arrays.asList(on));
         startForeground(NOTIF_ID, build("Iniciando...", -1, true));
         if (ShaderTools.dlRunning) return START_NOT_STICKY;
         final NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        ShaderTools.startDownload(getApplicationContext(), Uri.parse(t),
+        ShaderTools.startDownload(getApplicationContext(), Uri.parse(t), only,
                 new ShaderTools.Progress() {
                     public void update(String label, int percent) {
                         long now = System.currentTimeMillis();

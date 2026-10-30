@@ -10,6 +10,9 @@ import android.os.Looper;
 import android.provider.DocumentsContract;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -25,6 +28,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -1565,7 +1569,59 @@ public final class ShaderTools {
      * Baixa o repositorio libretro/slang-shaders e converte/instala o que der.
      * Chamado pelo ShaderDownloadService. svcP/svcR (thread principal) atualizam a notificacao.
      */
+    public interface Categories {
+        void got(List<String> names);
+    }
+
+    /** Lista as pastas do repositorio (null se falhar). Chama cb na thread principal. */
+    public static void listCategories(final Categories cb) {
+        new Thread(new Runnable() {
+            public void run() {
+                List<String> out = null;
+                try {
+                    HttpURLConnection c = (HttpURLConnection) new URL(
+                            "https://api.github.com/repos/libretro/slang-shaders/contents").openConnection();
+                    c.setConnectTimeout(15000);
+                    c.setReadTimeout(20000);
+                    c.setRequestProperty("Accept", "application/vnd.github+json");
+                    c.setRequestProperty("User-Agent", "AlphaDS");
+                    if (c.getResponseCode() == 200) {
+                        InputStream in = c.getInputStream();
+                        ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                        in.close();
+                        JSONArray a = new JSONArray(bo.toString("UTF-8"));
+                        out = new ArrayList<String>();
+                        for (int i = 0; i < a.length(); i++) {
+                            JSONObject o = a.getJSONObject(i);
+                            String nm = o.getString("name");
+                            if ("dir".equals(o.getString("type")) && !nm.startsWith(".")) out.add(nm);
+                        }
+                        Collections.sort(out, String.CASE_INSENSITIVE_ORDER);
+                        if (out.isEmpty()) out = null;
+                    }
+                } catch (Throwable ignored) {
+                    out = null;
+                }
+                final List<String> r = out;
+                ui(new Runnable() {
+                    public void run() {
+                        cb.got(r);
+                    }
+                });
+            }
+        }).start();
+    }
+
     public static void startDownload(final Context ctx, final Uri tree,
+                                     final Progress svcP, final Result svcR) {
+        startDownload(ctx, tree, null, svcP, svcR);
+    }
+
+    /** only = pastas do repositorio a instalar (null = todas). */
+    public static void startDownload(final Context ctx, final Uri tree, final Set<String> only,
                                      final Progress svcP, final Result svcR) {
         if (dlRunning) return;
         dlRunning = true;
@@ -1590,7 +1646,7 @@ public final class ShaderTools {
                     downloadAndExtract(tmpDir, pg);
                     File root = findFirstDir(tmpDir);
                     if (root == null) throw new Exception("zip estranho");
-                    summary = convertRepo(ctx, tree, root, pg);
+                    summary = convertRepo(ctx, tree, root, pg, only);
                 } catch (Throwable e) {
                     summary = "Falhou: " + e;
                 } finally {
@@ -1740,7 +1796,7 @@ public final class ShaderTools {
     }
 
     /** Converte e instala as presets/shaders de uma pasta extraida. */
-    static String convertRepo(Context ctx, Uri tree, File rootDir, Progress pg) {
+    static String convertRepo(Context ctx, Uri tree, File rootDir, Progress pg, Set<String> only) {
         Uri dir = shadersDir(ctx, tree);
         if (dir == null) return "Nao achei a pasta de shaders";
         ensureBuiltins(ctx, tree);
@@ -1754,7 +1810,16 @@ public final class ShaderTools {
         }
         List<File> presets = new ArrayList<File>();
         List<File> singles = new ArrayList<File>();
-        collect(rootDir, presets, singles);
+        if (only == null) {
+            collect(rootDir, presets, singles);
+        } else {
+            File[] top = rootDir.listFiles();
+            if (top != null) {
+                for (File t : top) {
+                    if (t.isDirectory() && only.contains(t.getName())) collect(t, presets, singles);
+                }
+            }
+        }
         Collections.sort(presets);
         Collections.sort(singles);
         HashSet<String> referenced = new HashSet<String>();
