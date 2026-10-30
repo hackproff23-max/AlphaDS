@@ -83,7 +83,7 @@
 
     invoke-direct {v1, v2, v0}, Landroid/content/Intent;-><init>(Ljava/lang/String;Landroid/net/Uri;)V
 
-    const-class v2, Lcom/dsemu/drastic/LoadingActivity;
+    const-class v2, Lcom/dsemu/drastic/DraSticActivity;
 
     invoke-virtual {v1, p0, v2}, Landroid/content/Intent;->setClass(Landroid/content/Context;Ljava/lang/Class;)Landroid/content/Intent;
 

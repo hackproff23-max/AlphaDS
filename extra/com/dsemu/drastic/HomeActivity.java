@@ -1065,9 +1065,11 @@ public class HomeActivity extends Activity {
 
     private void launch(Game g) {
         Intent i = new Intent(Intent.ACTION_VIEW, g.uri);
-        i.setComponent(new ComponentName(this, "com.dsemu.drastic.LoadingActivity"));
+        // vai direto para a tela do logo girando (DraStic), sem tela intermediaria
+        i.setComponent(new ComponentName(this, "com.dsemu.drastic.DraSticActivity"));
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivity(i);
+        overridePendingTransition(0, 0);
     }
 
     // ---------- opcoes de texto (botao vermelho "Aa") ----------
