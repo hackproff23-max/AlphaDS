@@ -10,9 +10,6 @@ import android.os.Looper;
 import android.provider.DocumentsContract;
 import android.widget.Toast;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -28,7 +25,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,7 +54,7 @@ public final class ShaderTools {
     /** Subpasta que guarda as versoes originais (sem ajuste) dos .dfx. */
     static final String PRISTINE_DIR = ".alphads_orig";
 
-    static final String[] BUILTIN_FX = {"Linear", "None", "Point"};
+    static final String[] BUILTIN_FX = {"Linear", "None"};
 
     // ============================ pasta de shaders (SAF) ============================
 
@@ -1527,88 +1523,86 @@ public final class ShaderTools {
         void done(String summary);
     }
 
+    /** Progresso do download (chamado na thread principal). percent < 0 = indeterminado. */
+    public interface Progress {
+        void update(String label, int percent);
+    }
+
+    private static void prog(final Progress p, final String label, final int percent) {
+        if (p == null) return;
+        ui(new Runnable() {
+            public void run() {
+                p.update(label, percent);
+            }
+        });
+    }
+
     /**
      * Baixa o repositorio libretro/slang-shaders e converte/instala o que der.
      * Chama cb.done(resumo) na thread principal.
      */
-    public interface Categories {
-        void got(List<String> names);
+    // ---- estado do download (sobrevive a troca de tela; roda dentro do servico) ----
+    public static volatile boolean dlRunning = false;
+    public static volatile String dlLabel = "";
+    public static volatile int dlPercent = -1;
+    /** Resumo do ultimo download terminado e ainda nao mostrado na tela. */
+    public static volatile String dlPendingSummary = null;
+    private static Progress uiProgress;
+    private static Result uiResult;
+
+    /** A tela do menu se registra aqui enquanto esta aberta (thread principal). */
+    public static void attachUi(Progress p, Result r) {
+        uiProgress = p;
+        uiResult = r;
     }
 
-    /** Lista as pastas do repositorio (null se falhar). Chama cb na thread principal. */
-    public static void listCategories(final Categories cb) {
-        new Thread(new Runnable() {
-            public void run() {
-                List<String> out = null;
-                try {
-                    HttpURLConnection c = (HttpURLConnection) new URL(
-                            "https://api.github.com/repos/libretro/slang-shaders/contents").openConnection();
-                    c.setConnectTimeout(15000);
-                    c.setReadTimeout(20000);
-                    c.setRequestProperty("Accept", "application/vnd.github+json");
-                    c.setRequestProperty("User-Agent", "AlphaDS");
-                    if (c.getResponseCode() == 200) {
-                        InputStream in = c.getInputStream();
-                        ByteArrayOutputStream bo = new ByteArrayOutputStream();
-                        byte[] buf = new byte[16384];
-                        int n;
-                        while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
-                        in.close();
-                        JSONArray a = new JSONArray(bo.toString("UTF-8"));
-                        out = new ArrayList<String>();
-                        for (int i = 0; i < a.length(); i++) {
-                            JSONObject o = a.getJSONObject(i);
-                            String nm = o.getString("name");
-                            if ("dir".equals(o.getString("type")) && !nm.startsWith(".")) out.add(nm);
-                        }
-                        Collections.sort(out, String.CASE_INSENSITIVE_ORDER);
-                        if (out.isEmpty()) out = null;
-                    }
-                } catch (Throwable ignored) {
-                    out = null;
-                }
-                final List<String> r = out;
-                ui(new Runnable() {
-                    public void run() {
-                        cb.got(r);
-                    }
-                });
+    public static void detachUi() {
+        uiProgress = null;
+        uiResult = null;
+    }
+
+    /**
+     * Baixa o repositorio libretro/slang-shaders e converte/instala o que der.
+     * Chamado pelo ShaderDownloadService. svcP/svcR (thread principal) atualizam a notificacao.
+     */
+    public static void startDownload(final Context ctx, final Uri tree,
+                                     final Progress svcP, final Result svcR) {
+        if (dlRunning) return;
+        dlRunning = true;
+        dlLabel = "Iniciando...";
+        dlPercent = -1;
+        dlPendingSummary = null;
+        final Progress pg = new Progress() {
+            public void update(String label, int percent) {
+                dlLabel = label;
+                dlPercent = percent;
+                if (svcP != null) svcP.update(label, percent);
+                if (uiProgress != null) uiProgress.update(label, percent);
             }
-        }).start();
-    }
-
-    public static void downloadAllShaders(final Context ctx, final Uri tree, final Result cb) {
-        downloadShaders(ctx, tree, null, cb);
-    }
-
-    /** Baixa e instala so as pastas em "only" (null = todas). */
-    public static void downloadShaders(final Context ctx, final Uri tree, final Set<String> only,
-                                       final Result cb) {
+        };
         new Thread(new Runnable() {
             public void run() {
                 String summary;
-                File tmpZip = new File(ctx.getCacheDir(), "slang_shaders.zip");
                 File tmpDir = new File(ctx.getCacheDir(), "slang_shaders");
                 try {
-                    toast(ctx, "Baixando shaders do GitHub...");
-                    download(tmpZip);
-                    toast(ctx, "Extraindo...");
                     rmrf(tmpDir);
                     tmpDir.mkdirs();
-                    unzip(tmpZip, tmpDir);
+                    downloadAndExtract(tmpDir, pg);
                     File root = findFirstDir(tmpDir);
                     if (root == null) throw new Exception("zip estranho");
-                    summary = convertRepo(ctx, tree, root, only);
+                    summary = convertRepo(ctx, tree, root, pg);
                 } catch (Throwable e) {
                     summary = "Falhou: " + e;
                 } finally {
                     rmrf(tmpDir);
-                    tmpZip.delete();
                 }
                 final String s = summary;
                 ui(new Runnable() {
                     public void run() {
-                        cb.done(s);
+                        dlRunning = false;
+                        if (svcR != null) svcR.done(s);
+                        if (uiResult != null) uiResult.done(s);
+                        else dlPendingSummary = s;
                     }
                 });
             }
@@ -1627,21 +1621,88 @@ public final class ShaderTools {
         new Handler(Looper.getMainLooper()).post(r);
     }
 
-    private static void download(File dest) throws Exception {
+    static final String TREE_API =
+            "https://api.github.com/repos/libretro/slang-shaders/git/trees/master?recursive=1";
+
+    private static String mb(long bytes) {
+        return String.format(java.util.Locale.US, "%.1f MB", bytes / 1048576f);
+    }
+
+    /** Soma o tamanho dos arquivos do repositorio (para mostrar o total em MB). 0 se falhar. */
+    private static long fetchTotalBytes() {
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(TREE_API).openConnection();
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(30000);
+            c.setRequestProperty("Accept", "application/vnd.github+json");
+            c.setRequestProperty("User-Agent", "AlphaDS");
+            if (c.getResponseCode() != 200) return 0;
+            InputStream in = c.getInputStream();
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            byte[] buf = new byte[32768];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            in.close();
+            org.json.JSONArray arr = new org.json.JSONObject(bo.toString("UTF-8"))
+                    .getJSONArray("tree");
+            long sum = 0;
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject o = arr.getJSONObject(i);
+                if ("blob".equals(o.optString("type"))) sum += o.optLong("size", 0);
+            }
+            return sum;
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    /** Baixa o zip do GitHub e ja extrai em destDir, mostrando MB baixados / total. */
+    private static void downloadAndExtract(File destDir, Progress pg) throws Exception {
+        prog(pg, "Buscando tamanho...", -1);
+        final long total = fetchTotalBytes();
+        if (total > 0) prog(pg, "Tamanho total: ~" + mb(total), 0);
         HttpURLConnection conn = (HttpURLConnection) new URL(REPO_ZIP).openConnection();
         conn.setConnectTimeout(20000);
         conn.setReadTimeout(60000);
         conn.setInstanceFollowRedirects(true);
         int code = conn.getResponseCode();
         if (code != 200) throw new Exception("HTTP " + code);
-        InputStream in = conn.getInputStream();
-        FileOutputStream out = new FileOutputStream(dest);
+        ZipInputStream zis = new ZipInputStream(new java.io.BufferedInputStream(conn.getInputStream()));
+        String base = destDir.getCanonicalPath();
         byte[] buf = new byte[32768];
-        int n;
-        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-        out.close();
-        in.close();
-        if (dest.length() < 1024) throw new Exception("download vazio");
+        ZipEntry e;
+        long done = 0, last = 0;
+        int files = 0;
+        while ((e = zis.getNextEntry()) != null) {
+            File out = new File(destDir, e.getName());
+            if (!out.getCanonicalPath().startsWith(base)) continue;
+            if (e.isDirectory()) {
+                out.mkdirs();
+                continue;
+            }
+            out.getParentFile().mkdirs();
+            FileOutputStream fo = new FileOutputStream(out);
+            int n;
+            while ((n = zis.read(buf)) > 0) {
+                fo.write(buf, 0, n);
+                done += n;
+                long now = System.currentTimeMillis();
+                if (now - last > 150) {
+                    last = now;
+                    if (total > 0) {
+                        int pc = (int) Math.min(99, done * 100L / total);
+                        prog(pg, "Baixando " + mb(done) + " / ~" + mb(total) + " (" + pc + "%)", pc);
+                    } else {
+                        prog(pg, "Baixando... " + mb(done), -1);
+                    }
+                }
+            }
+            fo.close();
+            files++;
+        }
+        zis.close();
+        if (files == 0) throw new Exception("download vazio");
+        prog(pg, "Baixado: " + mb(done), 100);
     }
 
     private static void unzip(File zip, File destDir) throws Exception {
@@ -1679,7 +1740,7 @@ public final class ShaderTools {
     }
 
     /** Converte e instala as presets/shaders de uma pasta extraida. */
-    static String convertRepo(Context ctx, Uri tree, File rootDir, Set<String> only) {
+    static String convertRepo(Context ctx, Uri tree, File rootDir, Progress pg) {
         Uri dir = shadersDir(ctx, tree);
         if (dir == null) return "Nao achei a pasta de shaders";
         ensureBuiltins(ctx, tree);
@@ -1693,21 +1754,13 @@ public final class ShaderTools {
         }
         List<File> presets = new ArrayList<File>();
         List<File> singles = new ArrayList<File>();
-        if (only == null) {
-            collect(rootDir, presets, singles);
-        } else {
-            File[] top = rootDir.listFiles();
-            if (top != null) {
-                for (File t : top) {
-                    if (t.isDirectory() && only.contains(t.getName())) collect(t, presets, singles);
-                }
-            }
-        }
+        collect(rootDir, presets, singles);
         Collections.sort(presets);
         Collections.sort(singles);
         HashSet<String> referenced = new HashSet<String>();
         HashSet<String> used = new HashSet<String>();
         int ok = 0, fail = 0, shown = 0;
+        final int totalItems = Math.max(1, presets.size() + singles.size());
         StringBuilder fails = new StringBuilder();
         for (File p : presets) {
             try {
@@ -1740,7 +1793,12 @@ public final class ShaderTools {
                 }
             }
             shown++;
-            if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            if (pg == null) {
+                if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            } else if (shown % 5 == 0 || shown == totalItems) {
+                prog(pg, "Convertendo shaders... " + shown + "/" + totalItems,
+                        Math.min(100, shown * 100 / totalItems));
+            }
         }
         for (File s : singles) {
             if (referenced.contains(fileStem(s.getName().toLowerCase()))) continue;
@@ -1759,7 +1817,12 @@ public final class ShaderTools {
                 fail++;
             }
             shown++;
-            if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            if (pg == null) {
+                if (shown % 100 == 0) toast(ctx, "Convertendo shaders... " + shown);
+            } else if (shown % 5 == 0 || shown == totalItems) {
+                prog(pg, "Convertendo shaders... " + shown + "/" + totalItems,
+                        Math.min(100, shown * 100 / totalItems));
+            }
         }
         String msg = ok + " shaders instaladas, " + fail + " nao suportadas";
         if (fails.length() > 0) msg += "\nEx.: " + fails;
