@@ -195,7 +195,7 @@ public final class ShaderTools {
         try {
             Uri dir = shadersDir(ctx, tree);
             if (dir == null) return;
-            String[] files = {"Linear.dfx", "None.dfx"};
+            String[] files = {"Linear.dfx", "None.dfx", "linear.dsd"};
             for (String f : files) {
                 if (!hasChild(ctx, dir, f)) {
                     byte[] b = readAsset(ctx, "shaders/" + f);

@@ -1835,7 +1835,7 @@
 
     iget-object v0, p0, Lcom/dsemu/drastic/DraSticGlView;->k:Lcom/dsemu/drastic/DraSticEmuActivity;
 
-    invoke-virtual {v0}, Lcom/dsemu/drastic/DraSticEmuActivity;->u()V
+    invoke-virtual {v0}, Lcom/dsemu/drastic/DraSticEmuActivity;->openMain()V
 
     return-void
 .end method

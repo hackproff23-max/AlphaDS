@@ -1,7 +1,7 @@
-// Point shader
+// None shader (sem filtro, pixel perfeito)
 =============================================
 <options>
-name=Point
+name=None
 textures=1
 </options>
 

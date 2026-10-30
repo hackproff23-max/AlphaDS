@@ -2825,3 +2825,25 @@
 
     return-void
 .end method
+
+.method public openMain()V
+    .locals 3
+
+    new-instance v0, Landroid/content/Intent;
+
+    invoke-direct {v0}, Landroid/content/Intent;-><init>()V
+
+    const-string v1, "com.dsemu.drastic.HomeActivity"
+
+    invoke-virtual {v0, p0, v1}, Landroid/content/Intent;->setClassName(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;
+
+    const/high16 v1, 0x14000000
+
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->addFlags(I)Landroid/content/Intent;
+
+    invoke-virtual {p0, v0}, Landroid/app/Activity;->startActivity(Landroid/content/Intent;)V
+
+    invoke-virtual {p0}, Lcom/dsemu/drastic/DraSticEmuActivity;->u()V
+
+    return-void
+.end method
