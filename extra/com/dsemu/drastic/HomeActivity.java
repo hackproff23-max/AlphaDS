@@ -477,6 +477,20 @@ public class HomeActivity extends Activity {
         return true;
     }
 
+    /** Cria a pasta do app (nome do app) no armazenamento interno, se tiver permissao. */
+    private void ensureAppFolder() {
+        try {
+            if (Build.VERSION.SDK_INT >= 30 ? !android.os.Environment.isExternalStorageManager()
+                    : !hasAllFiles()) return;
+            String name = getApplicationInfo().loadLabel(getPackageManager()).toString()
+                    .replaceAll("[\\\\/:*?\"<>|]", "").trim();
+            if (name.length() == 0) name = "AlphaDS";
+            File dir = new File(android.os.Environment.getExternalStorageDirectory(), name);
+            if (!dir.exists()) dir.mkdirs();
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** Botao amarelo: seletor de pasta proprio (sem abrir o gerenciador de arquivos). */
     private void pickFolder() {
         if (hasAllFiles()) {
@@ -868,6 +882,7 @@ public class HomeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        ensureAppFolder();
         if (pendingPick && hasAllFiles()) {
             pendingPick = false;
             showFolderPicker();
