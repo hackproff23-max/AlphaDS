@@ -3984,61 +3984,13 @@
 .end method
 
 .method private b1(I)V
-    .locals 5
+    .locals 2
 
-    invoke-virtual {p0}, Landroid/content/Context;->getResources()Landroid/content/res/Resources;
+    const/4 v0, 0x0
 
-    move-result-object v4
+    const/4 v1, 0x0
 
-    new-instance v0, Landroid/app/AlertDialog$Builder;
-
-    invoke-direct {v0, p0}, Landroid/app/AlertDialog$Builder;-><init>(Landroid/content/Context;)V
-
-    invoke-virtual {v4, p1}, Landroid/content/res/Resources;->getString(I)Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-virtual {v0, v1}, Landroid/app/AlertDialog$Builder;->setMessage(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;
-
-    move-result-object v1
-
-    const/4 v2, 0x0
-
-    invoke-virtual {v1, v2}, Landroid/app/AlertDialog$Builder;->setCancelable(Z)Landroid/app/AlertDialog$Builder;
-
-    move-result-object v1
-
-    new-instance v2, Le0/b0;
-
-    invoke-direct {v2, p0}, Le0/b0;-><init>(Lcom/dsemu/drastic/DraSticActivity;)V
-
-    const v3, 0x7f0f01b9
-
-    invoke-virtual {v4, v3}, Landroid/content/res/Resources;->getString(I)Ljava/lang/String;
-
-    move-result-object v3
-
-    invoke-virtual {v1, v3, v2}, Landroid/app/AlertDialog$Builder;->setPositiveButton(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;
-
-    move-result-object v1
-
-    new-instance v2, Le0/c0;
-
-    invoke-direct {v2, p0}, Le0/c0;-><init>(Lcom/dsemu/drastic/DraSticActivity;)V
-
-    const v3, 0x7f0f019c
-
-    invoke-virtual {v4, v3}, Landroid/content/res/Resources;->getString(I)Ljava/lang/String;
-
-    move-result-object v3
-
-    invoke-virtual {v1, v3, v2}, Landroid/app/AlertDialog$Builder;->setNegativeButton(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;
-
-    invoke-virtual {v0}, Landroid/app/AlertDialog$Builder;->create()Landroid/app/AlertDialog;
-
-    move-result-object v0
-
-    invoke-virtual {v0}, Landroid/app/Dialog;->show()V
+    invoke-direct {p0, v0, v1}, Lcom/dsemu/drastic/DraSticActivity;->R0(Landroid/content/DialogInterface;I)V
 
     return-void
 .end method
