@@ -190,7 +190,7 @@
 
     invoke-virtual {v2, v0}, Landroid/widget/TextView;->setTypeface(Landroid/graphics/Typeface;)V
 
-    const/high16 v4, 0x41c00000    # 24.0f
+    const/high16 v4, 0x42200000    # 40.0f
 
     invoke-virtual {v2, v3, v4}, Landroid/widget/TextView;->setTextSize(IF)V
 
@@ -202,7 +202,7 @@
 
     const/4 v4, 0x0
 
-    const/16 v6, 0x18
+    const/4 v6, 0x2
 
     invoke-virtual {v2, v4, v6, v4, v4}, Landroid/view/View;->setPadding(IIII)V
 
@@ -261,7 +261,7 @@
 
     if-ge v0, v1, :cond_sub
 
-    const-string v2, "DRASTIC"
+    const-string v2, "alphaDS"
 
     add-int/lit8 v3, v0, 0x1
 
