@@ -27,6 +27,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
+import android.text.TextPaint;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -35,10 +36,15 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.CompoundButton;
 import android.widget.FrameLayout;
 import android.widget.GridView;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -68,6 +74,20 @@ public class HomeActivity extends Activity {
     private static boolean splashDone = false;
     private float d;
     private int iconPx;
+    private FrameLayout rootFrame;
+
+    // estilo do texto dos jogos (menu do botao "Aa" vermelho)
+    private static final int DEF_TXT_SIZE = 12;           // sp
+    private static final int DEF_TXT_OUTLINE = 0;         // dp
+    private static final int DEF_TXT_COLOR = 0xFF222222;
+    private static final int DEF_TXT_OUTLINE_COLOR = 0xFF000000;
+    private static final int DEF_TXT_BG = 0xFFFFFFFF;
+
+    private static final int[] TXT_COLORS = {
+            0xFF000000, 0xFF444444, 0xFF888888, 0xFFCCCCCC, 0xFFFFFFFF, 0xFF795548,
+            0xFFE53935, 0xFFFF7043, 0xFFFFA000, 0xFFFDD835, 0xFF2E9E3E, 0xFF00897B,
+            0xFF1565C0, 0xFF3D8BFF, 0xFF8E24AA, 0xFFD81B60
+    };
 
     private int dp(float v) {
         return (int) (v * d + 0.5f);
@@ -134,6 +154,7 @@ public class HomeActivity extends Activity {
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(0xFF000000);
         frame.addView(root, new FrameLayout.LayoutParams(-1, -1));
+        rootFrame = frame;
         if (!splashDone) {
             splashDone = true;
             addSplash(frame);
@@ -245,8 +266,11 @@ public class HomeActivity extends Activity {
             }
         }));
         // vermelho: textos
-        dock.addView(slot(IconView.TEXT, 0xFFE53935, 0xFFFFFFFF,
-                soon("Opcoes de texto: tamanho, fonte, contorno, cor de fundo, sombra e background")));
+        dock.addView(slot(IconView.TEXT, 0xFFE53935, 0xFFFFFFFF, new View.OnClickListener() {
+            public void onClick(View v) {
+                showTextMenu();
+            }
+        }));
         // amarelo: escolher pasta com todos os jogos
         dock.addView(slot(IconView.FOLDER, 0xFFFFA000, 0xFFFFFFFF, new View.OnClickListener() {
             public void onClick(View v) {
@@ -327,18 +351,13 @@ public class HomeActivity extends Activity {
             img.setScaleType(ImageView.ScaleType.FIT_CENTER);
             cell.addView(img, new LinearLayout.LayoutParams(iconPx, iconPx));
 
-            TextView name = new TextView(HomeActivity.this);
+            StyledTextView name = new StyledTextView(HomeActivity.this);
             name.setText(g.title);
-            name.setTextColor(0xFF222222);
-            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             name.setGravity(Gravity.CENTER);
             name.setPadding(dp(8), dp(4), dp(8), dp(4));
-            GradientDrawable pill = new GradientDrawable();
-            pill.setColor(0xFFFFFFFF);
-            pill.setCornerRadius(dp(14));
-            name.setBackgroundDrawable(pill);
+            applyTextStyle(name);
             LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(iconPx, -2);
             nlp.topMargin = dp(6);
             cell.addView(name, nlp);
@@ -598,6 +617,473 @@ public class HomeActivity extends Activity {
         i.setComponent(new ComponentName(this, "com.dsemu.drastic.LoadingActivity"));
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivity(i);
+    }
+
+    // ---------- opcoes de texto (botao vermelho "Aa") ----------
+
+    private int txtSize() {
+        return prefs.getInt("txt_size", DEF_TXT_SIZE);
+    }
+
+    private int txtOutline() {
+        return prefs.getInt("txt_outline", DEF_TXT_OUTLINE);
+    }
+
+    private boolean txtShadow() {
+        return prefs.getBoolean("txt_shadow", false);
+    }
+
+    private int txtColor() {
+        return prefs.getInt("txt_color", DEF_TXT_COLOR);
+    }
+
+    private int txtOutlineColor() {
+        return prefs.getInt("txt_outline_color", DEF_TXT_OUTLINE_COLOR);
+    }
+
+    private int txtBg() {
+        return prefs.getInt("txt_bg", DEF_TXT_BG);
+    }
+
+    /** Aplica o estilo salvo a um rotulo de jogo. */
+    private void applyTextStyle(StyledTextView tv) {
+        tv.setTextStyle(txtSize(), txtColor(), txtOutline(), txtOutlineColor(), txtShadow());
+        int bg = txtBg();
+        if (Color.alpha(bg) == 0) {
+            tv.setBackgroundDrawable(null);
+        } else {
+            tv.setBackgroundDrawable(textPill(bg));
+        }
+    }
+
+    private GradientDrawable textPill(int bgColor) {
+        GradientDrawable pill = new GradientDrawable();
+        pill.setColor(bgColor);
+        pill.setCornerRadius(dp(14));
+        return pill;
+    }
+
+    private void stylePreview(StyledTextView tv, int[] size, int[] outline, boolean[] shadow,
+                              int[] color, int[] ocolor, int[] bg) {
+        tv.setTextStyle(size[0], color[0], outline[0], ocolor[0], shadow[0]);
+        if (Color.alpha(bg[0]) == 0) {
+            tv.setBackgroundDrawable(null);
+        } else {
+            tv.setBackgroundDrawable(textPill(bg[0]));
+        }
+    }
+
+    /** Salva as opcoes atuais e atualiza os rotulos da grade. */
+    private void persistText(int[] size, int[] outline, boolean[] shadow,
+                             int[] color, int[] ocolor, int[] bg) {
+        prefs.edit()
+                .putInt("txt_size", size[0])
+                .putInt("txt_outline", outline[0])
+                .putBoolean("txt_shadow", shadow[0])
+                .putInt("txt_color", color[0])
+                .putInt("txt_outline_color", ocolor[0])
+                .putInt("txt_bg", bg[0])
+                .apply();
+        if (adapter != null) adapter.notifyDataSetChanged();
+    }
+
+    private TextView menuLabel(String s) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(0xFF55555C);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        return t;
+    }
+
+    private TextView menuValue() {
+        TextView t = new TextView(this);
+        t.setTextColor(0xFF3D8BFF);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        return t;
+    }
+
+    private TextView pillButton(String s, int bg, int fg) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(fg);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(0, dp(10), 0, dp(10));
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(bg);
+        g.setCornerRadius(dp(24));
+        t.setBackgroundDrawable(g);
+        return t;
+    }
+
+    private LinearLayout.LayoutParams cwlp(int topDp) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(topDp);
+        return lp;
+    }
+
+    /** Abre o menu de opcoes de texto sobre a tela inicial. */
+    private void showTextMenu() {
+        final FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x66000000);
+        overlay.setClickable(true);
+
+        final Runnable closer = new Runnable() {
+            public void run() {
+                rootFrame.removeView(overlay);
+            }
+        };
+        overlay.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        ScrollView panel = new ScrollView(this);
+        panel.setVerticalScrollBarEnabled(false);
+        panel.setFillViewport(true);
+        panel.setClickable(true);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(0xFFF7F7F9);
+        pbg.setCornerRadii(new float[]{dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0});
+        panel.setBackgroundDrawable(pbg);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(12), dp(16), dp(20));
+        panel.addView(content, new FrameLayout.LayoutParams(-1, -2));
+
+        // cabecalho
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(this);
+        title.setText("Opcoes de texto");
+        title.setTextColor(0xFF222222);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView x = new TextView(this);
+        x.setText("X");
+        x.setTextColor(0xFF666666);
+        x.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        x.setTypeface(Typeface.DEFAULT_BOLD);
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable xbg = new GradientDrawable();
+        xbg.setColor(0xFFE8E8EC);
+        xbg.setCornerRadius(dp(16));
+        x.setBackgroundDrawable(xbg);
+        x.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+        head.addView(x, new LinearLayout.LayoutParams(-2, -2));
+        content.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        // previa
+        TextView pvLabel = menuLabel("Previa");
+        pvLabel.setPadding(0, dp(12), 0, dp(4));
+        content.addView(pvLabel, new LinearLayout.LayoutParams(-1, -2));
+        FrameLayout prevArea = new FrameLayout(this);
+        GradientDrawable prevBg = new GradientDrawable();
+        prevBg.setColor(0xFF2A2A30);
+        prevBg.setCornerRadius(dp(12));
+        prevArea.setBackgroundDrawable(prevBg);
+        prevArea.setPadding(dp(10), dp(16), dp(10), dp(16));
+        final StyledTextView preview = new StyledTextView(this);
+        preview.setText("Texto de exemplo");
+        preview.setGravity(Gravity.CENTER);
+        prevArea.addView(preview, new FrameLayout.LayoutParams(-1, -2));
+        content.addView(prevArea, new LinearLayout.LayoutParams(-1, -2));
+
+        // estado de trabalho (arranjos de 1 posicao para mudar dentro dos listeners)
+        final int[] size = new int[]{txtSize()};
+        final int[] outline = new int[]{txtOutline()};
+        final boolean[] shadow = new boolean[]{txtShadow()};
+        final int[] color = new int[]{txtColor()};
+        final int[] ocolor = new int[]{txtOutlineColor()};
+        final int[] bg = new int[]{txtBg()};
+
+        final TextView sizeVal = menuValue();
+        sizeVal.setText(size[0] + " sp");
+        final TextView outlineVal = menuValue();
+        outlineVal.setText(outline[0] + " dp");
+
+        final SeekBar sbSize = new SeekBar(this);
+        sbSize.setMax(20); // 8..28 sp
+        sbSize.setProgress(size[0] - 8);
+        final SeekBar sbOutline = new SeekBar(this);
+        sbOutline.setMax(8); // 0..8 dp
+        sbOutline.setProgress(outline[0]);
+        final Switch swShadow = new Switch(this);
+        swShadow.setText("Sombra");
+        swShadow.setTextColor(0xFF222222);
+        swShadow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        swShadow.setChecked(shadow[0]);
+
+        final Runnable onChange = new Runnable() {
+            public void run() {
+                stylePreview(preview, size, outline, shadow, color, ocolor, bg);
+                persistText(size, outline, shadow, color, ocolor, bg);
+            }
+        };
+
+        final SwatchRow colorRow = new SwatchRow(color, onChange);
+        final SwatchRow ocolorRow = new SwatchRow(ocolor, onChange);
+        final SwatchRow bgRow = new SwatchRow(bg, onChange);
+        for (int i = 0; i < TXT_COLORS.length; i++) {
+            colorRow.add(TXT_COLORS[i]);
+            ocolorRow.add(TXT_COLORS[i]);
+        }
+        bgRow.add(0x00000000); // primeira opcao: fundo transparente
+        for (int i = 0; i < TXT_COLORS.length; i++) {
+            bgRow.add(TXT_COLORS[i]);
+        }
+
+        sbSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                size[0] = p + 8;
+                sizeVal.setText(size[0] + " sp");
+                onChange.run();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+            }
+        });
+        sbOutline.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                outline[0] = p;
+                outlineVal.setText(outline[0] + " dp");
+                onChange.run();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+            }
+        });
+        swShadow.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                shadow[0] = checked;
+                onChange.run();
+            }
+        });
+
+        // tamanho de texto
+        LinearLayout rowSize = new LinearLayout(this);
+        rowSize.setOrientation(LinearLayout.HORIZONTAL);
+        rowSize.setGravity(Gravity.CENTER_VERTICAL);
+        rowSize.setPadding(0, dp(12), 0, 0);
+        rowSize.addView(menuLabel("Tamanho de texto"), new LinearLayout.LayoutParams(0, -2, 1f));
+        rowSize.addView(sizeVal, new LinearLayout.LayoutParams(-2, -2));
+        content.addView(rowSize, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(sbSize, new LinearLayout.LayoutParams(-1, -2));
+
+        // tamanho do contorno
+        LinearLayout rowOutline = new LinearLayout(this);
+        rowOutline.setOrientation(LinearLayout.HORIZONTAL);
+        rowOutline.setGravity(Gravity.CENTER_VERTICAL);
+        rowOutline.setPadding(0, dp(10), 0, 0);
+        rowOutline.addView(menuLabel("Tamanho do contorno"), new LinearLayout.LayoutParams(0, -2, 1f));
+        rowOutline.addView(outlineVal, new LinearLayout.LayoutParams(-2, -2));
+        content.addView(rowOutline, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(sbOutline, new LinearLayout.LayoutParams(-1, -2));
+
+        // sombra
+        LinearLayout rowShadow = new LinearLayout(this);
+        rowShadow.setOrientation(LinearLayout.HORIZONTAL);
+        rowShadow.setGravity(Gravity.CENTER_VERTICAL);
+        rowShadow.setPadding(0, dp(10), 0, 0);
+        rowShadow.addView(menuLabel("Sombra"), new LinearLayout.LayoutParams(0, -2, 1f));
+        rowShadow.addView(swShadow, new LinearLayout.LayoutParams(-2, -2));
+        content.addView(rowShadow, new LinearLayout.LayoutParams(-1, -2));
+
+        // cores
+        TextView lblColor = menuLabel("Cor da letra");
+        lblColor.setPadding(0, dp(14), 0, dp(6));
+        content.addView(lblColor, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(colorRow.build(), cwlp(0));
+
+        TextView lblOcolor = menuLabel("Cor do contorno");
+        lblOcolor.setPadding(0, dp(14), 0, dp(6));
+        content.addView(lblOcolor, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(ocolorRow.build(), cwlp(0));
+
+        TextView lblBg = menuLabel("Cor do fundo");
+        lblBg.setPadding(0, dp(14), 0, dp(6));
+        content.addView(lblBg, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(bgRow.build(), cwlp(0));
+        TextView hintBg = new TextView(this);
+        hintBg.setText("Na cor do fundo, a primeira opcao deixa o fundo transparente");
+        hintBg.setTextColor(0xFF9A9AA2);
+        hintBg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        hintBg.setPadding(0, dp(4), 0, 0);
+        content.addView(hintBg, new LinearLayout.LayoutParams(-1, -2));
+
+        // botoes
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        TextView reset = pillButton("Padrao", 0xFFE8E8EC, 0xFF333338);
+        TextView closeBtn = pillButton("Fechar", 0xFF3D8BFF, 0xFFFFFFFF);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, -2, 1f);
+        rlp.rightMargin = dp(8);
+        btns.addView(reset, rlp);
+        btns.addView(closeBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        content.addView(btns, cwlp(16));
+
+        reset.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                size[0] = DEF_TXT_SIZE;
+                outline[0] = DEF_TXT_OUTLINE;
+                shadow[0] = false;
+                color[0] = DEF_TXT_COLOR;
+                ocolor[0] = DEF_TXT_OUTLINE_COLOR;
+                bg[0] = DEF_TXT_BG;
+                sbSize.setProgress(DEF_TXT_SIZE - 8);
+                sbOutline.setProgress(DEF_TXT_OUTLINE);
+                swShadow.setChecked(false);
+                sizeVal.setText(size[0] + " sp");
+                outlineVal.setText(outline[0] + " dp");
+                colorRow.refresh();
+                ocolorRow.refresh();
+                bgRow.refresh();
+                onChange.run();
+            }
+        });
+        closeBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        // estado inicial da previa e dos aneis de selecao
+        stylePreview(preview, size, outline, shadow, color, ocolor, bg);
+        colorRow.refresh();
+        ocolorRow.refresh();
+        bgRow.refresh();
+
+        overlay.addView(panel, new FrameLayout.LayoutParams(-1,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
+        rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    /** Linha rolavel de circulos de cor; marca com um anel a cor escolhida. */
+    private class SwatchRow {
+        private final HorizontalScrollView holder = new HorizontalScrollView(HomeActivity.this);
+        private final LinearLayout box = new LinearLayout(HomeActivity.this);
+        private final List<GradientDrawable> bgs = new ArrayList<GradientDrawable>();
+        private final List<Integer> cols = new ArrayList<Integer>();
+        private final int[] current;
+        private final Runnable cb;
+
+        SwatchRow(int[] cur, Runnable callback) {
+            current = cur;
+            cb = callback;
+            holder.setHorizontalScrollBarEnabled(false);
+            box.setOrientation(LinearLayout.HORIZONTAL);
+            holder.addView(box, new FrameLayout.LayoutParams(-2, -2));
+        }
+
+        SwatchRow add(int c) {
+            View v = new View(HomeActivity.this);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(Color.alpha(c) == 0 ? 0xFFFFFFFF : c);
+            if (Color.alpha(c) == 0) {
+                g.setStroke(dp(2), 0xFFBDBDBD);
+            }
+            v.setBackgroundDrawable(g);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(26), dp(26));
+            lp.rightMargin = dp(8);
+            box.addView(v, lp);
+            final int idx = cols.size();
+            cols.add(Integer.valueOf(c));
+            bgs.add(g);
+            v.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View vv) {
+                    current[0] = cols.get(idx).intValue();
+                    refresh();
+                    cb.run();
+                }
+            });
+            return this;
+        }
+
+        View build() {
+            return holder;
+        }
+
+        void refresh() {
+            for (int i = 0; i < bgs.size(); i++) {
+                GradientDrawable g = bgs.get(i);
+                int c = cols.get(i).intValue();
+                if (c == current[0]) {
+                    g.setStroke(dp(3), 0xFF3D8BFF);
+                } else if (Color.alpha(c) == 0) {
+                    g.setStroke(dp(2), 0xFFBDBDBD);
+                } else {
+                    g.setStroke(0, 0);
+                }
+            }
+        }
+    }
+
+    /** TextView que desenha contorno e sombra no texto (nomes dos jogos e previa). */
+    private class StyledTextView extends TextView {
+        private int outlineDp;
+        private int outlineColor;
+        private boolean shadowOn;
+
+        StyledTextView(Context c) {
+            super(c);
+        }
+
+        void setTextStyle(int sizeSp, int color, int outline, int ocolor, boolean shadow) {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
+            setTextColor(color);
+            outlineDp = outline;
+            outlineColor = ocolor;
+            shadowOn = shadow;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            if (outlineDp <= 0 && !shadowOn) {
+                super.onDraw(cv);
+                return;
+            }
+            TextPaint tp = getPaint();
+            Paint.Style keepStyle = tp.getStyle();
+            int keepColor = tp.getColor();
+            float dens = getResources().getDisplayMetrics().density;
+            if (outlineDp > 0) {
+                tp.setStyle(Paint.Style.STROKE);
+                tp.setStrokeWidth(outlineDp * 2f * dens); // 2x: metade fica embaixo do preenchimento
+                tp.setColor(outlineColor);
+                if (shadowOn) {
+                    tp.setShadowLayer(3f * dens, dens, 2f * dens, 0x99000000);
+                }
+                super.onDraw(cv); // passada do contorno
+                tp.clearShadowLayer();
+                tp.setStyle(keepStyle);
+                tp.setStrokeWidth(0f);
+                tp.setColor(keepColor);
+            } else if (shadowOn) {
+                tp.setShadowLayer(3f * dens, dens, 2f * dens, 0x99000000);
+            }
+            super.onDraw(cv); // preenchimento
+            tp.clearShadowLayer();
+        }
     }
 
     // ---------- icones simples desenhados em codigo ----------
