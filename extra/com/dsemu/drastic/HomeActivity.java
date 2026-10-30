@@ -125,84 +125,6 @@ public class HomeActivity extends Activity {
             0xFF1565C0, 0xFF3D8BFF, 0xFF8E24AA, 0xFFD81B60
     };
 
-    /** Mostra as pastas de shaders do repositorio e baixa so as marcadas. */
-    private void chooseAndStartShaderDownload(final TextView dl, final Uri tree,
-                                              final ShaderTools.Progress uiP) {
-        dl.setEnabled(false);
-        dl.setAlpha(0.5f);
-        Toast.makeText(this, "Buscando lista de shaders...", Toast.LENGTH_SHORT).show();
-        ShaderTools.listCategories(new ShaderTools.Categories() {
-            public void got(final List<String> names) {
-                if (names == null) {
-                    beginShaderDownload(tree, uiP, null);
-                    return;
-                }
-                final boolean[] checked = new boolean[names.size()];
-                final AlertDialog d = new AlertDialog.Builder(HomeActivity.this)
-                        .setTitle("Quais shaders baixar?")
-                        .setMultiChoiceItems(names.toArray(new String[0]), checked,
-                                new android.content.DialogInterface.OnMultiChoiceClickListener() {
-                                    public void onClick(android.content.DialogInterface di, int which, boolean on) {
-                                        checked[which] = on;
-                                    }
-                                })
-                        .setPositiveButton("Baixar", new android.content.DialogInterface.OnClickListener() {
-                            public void onClick(android.content.DialogInterface di, int w) {
-                                ArrayList<String> sel = new ArrayList<String>();
-                                for (int i = 0; i < checked.length; i++) if (checked[i]) sel.add(names.get(i));
-                                if (sel.isEmpty()) {
-                                    Toast.makeText(HomeActivity.this, "Nenhuma shader marcada", Toast.LENGTH_SHORT).show();
-                                    dl.setEnabled(true);
-                                    dl.setAlpha(1f);
-                                    return;
-                                }
-                                beginShaderDownload(tree, uiP, sel.toArray(new String[0]));
-                            }
-                        })
-                        .setNeutralButton("Marcar todas", null)
-                        .setNegativeButton("Cancelar", new android.content.DialogInterface.OnClickListener() {
-                            public void onClick(android.content.DialogInterface di, int w) {
-                                dl.setEnabled(true);
-                                dl.setAlpha(1f);
-                            }
-                        })
-                        .setOnCancelListener(new android.content.DialogInterface.OnCancelListener() {
-                            public void onCancel(android.content.DialogInterface di) {
-                                dl.setEnabled(true);
-                                dl.setAlpha(1f);
-                            }
-                        })
-                        .create();
-                d.show();
-                d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(new View.OnClickListener() {
-                    public void onClick(View v) {
-                        boolean any = false;
-                        for (boolean b : checked) if (b) any = true;
-                        for (int i = 0; i < checked.length; i++) {
-                            checked[i] = !any;
-                            d.getListView().setItemChecked(i, !any);
-                        }
-                        ((TextView) v).setText(any ? "Marcar todas" : "Desmarcar todas");
-                    }
-                });
-            }
-        });
-    }
-
-    private void beginShaderDownload(Uri tree, ShaderTools.Progress uiP, String[] only) {
-        uiP.update("Iniciando...", -1);
-        if (Build.VERSION.SDK_INT >= 33) {
-            try {
-                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 77);
-            } catch (Throwable ignored) {
-            }
-        }
-        ShaderDownloadService.start(this, tree, only);
-        Toast.makeText(this,
-                "Download continua em segundo plano (veja a notificacao)",
-                Toast.LENGTH_SHORT).show();
-    }
-
     private int dp(float v) {
         return (int) (v * d + 0.5f);
     }
@@ -1893,9 +1815,7 @@ public class HomeActivity extends Activity {
         TextView imp = pillButton("Importar shader", 0xFF1565C0, 0xFFFFFFFF);
         final TextView dl = pillButton("Baixar todas", 0xFF2E9E3E, 0xFFFFFFFF);
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(0, -2, 1f);
-        blp.rightMargin = dp(8);
         btns.addView(imp, blp);
-        btns.addView(dl, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView sel = pillButton("Selecionar shader", 0xFF3D8BFF, 0xFFFFFFFF);
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
         slp.setMargins(dp(16), dp(4), dp(16), dp(8));
@@ -1921,7 +1841,7 @@ public class HomeActivity extends Activity {
         dlBox.addView(dlBar, new LinearLayout.LayoutParams(-1, dp(14)));
         panel.addView(dlBox, new LinearLayout.LayoutParams(-1, -2));
         TextView hintDl = new TextView(this);
-        hintDl.setText("Importar: arquivos .dfx, .slang, .slangp ou .glsl. Baixar: puxa e converte as shaders do repositorio slang-shaders (libretro). Ajuste abaixo funciona junto com qualquer shader.");
+        hintDl.setText("Importar: arquivos .dfx, .slang, .slangp ou .glsl. Ajuste abaixo funciona junto com qualquer shader.");
         hintDl.setTextColor(0xFF9A9AA2);
         hintDl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         hintDl.setTypeface(bebas());
@@ -1967,7 +1887,17 @@ public class HomeActivity extends Activity {
         dl.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 if (ShaderTools.dlRunning) return;
-                chooseAndStartShaderDownload(dl, tree, uiP);
+                uiP.update("Iniciando...", -1);
+                if (Build.VERSION.SDK_INT >= 33) {
+                    try {
+                        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 77);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                ShaderDownloadService.start(HomeActivity.this, tree);
+                Toast.makeText(HomeActivity.this,
+                        "Download continua em segundo plano (veja a notificacao)",
+                        Toast.LENGTH_SHORT).show();
             }
         });
 
