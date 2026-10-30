@@ -160,6 +160,29 @@
 
     invoke-virtual {v1, v2}, Landroid/view/ViewGroup;->addView(Landroid/view/View;)V
 
+    invoke-virtual {v2}, Landroid/view/View;->animate()Landroid/view/ViewPropertyAnimator;
+
+    move-result-object v3
+
+    const/high16 v5, 0x43b40000
+
+    invoke-virtual {v3, v5}, Landroid/view/ViewPropertyAnimator;->rotation(F)Landroid/view/ViewPropertyAnimator;
+
+    move-result-object v3
+
+    const-wide/16 v6, 0x3e8
+
+    invoke-virtual {v3, v6, v7}, Landroid/view/ViewPropertyAnimator;->setDuration(J)Landroid/view/ViewPropertyAnimator;
+
+    move-result-object v3
+
+    new-instance v4, Landroid/view/animation/AccelerateDecelerateInterpolator;
+
+    invoke-direct {v4}, Landroid/view/animation/AccelerateDecelerateInterpolator;-><init>()V
+
+    invoke-virtual {v3, v4}, Landroid/view/ViewPropertyAnimator;->setInterpolator(Landroid/animation/TimeInterpolator;)Landroid/view/ViewPropertyAnimator;
+
+
     new-instance v2, Landroid/widget/TextView;
 
     invoke-direct {v2, p0}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
@@ -179,8 +202,6 @@
     const-string v5, ""
 
     invoke-virtual {v2, v5}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
-
-    invoke-virtual {v1, v2}, Landroid/view/ViewGroup;->addView(Landroid/view/View;)V
 
     iput-object v2, p0, Lcom/dsemu/drastic/LoadingActivity;->b:Landroid/widget/TextView;
 
@@ -205,8 +226,6 @@
     const/4 v6, 0x2
 
     invoke-virtual {v2, v4, v6, v4, v4}, Landroid/view/View;->setPadding(IIII)V
-
-    invoke-virtual {v1, v2}, Landroid/view/ViewGroup;->addView(Landroid/view/View;)V
 
     iput-object v2, p0, Lcom/dsemu/drastic/LoadingActivity;->c:Landroid/widget/TextView;
 
@@ -253,67 +272,13 @@
 .end method
 
 .method public step()V
-    .locals 8
+    .locals 4
 
     iget v0, p0, Lcom/dsemu/drastic/LoadingActivity;->d:I
 
-    const/4 v1, 0x7
+    if-nez v0, :cond_done
 
-    if-ge v0, v1, :cond_sub
-
-    const-string v2, "alphaDS"
-
-    add-int/lit8 v3, v0, 0x1
-
-    const/4 v4, 0x0
-
-    invoke-virtual {v2, v4, v3}, Ljava/lang/String;->substring(II)Ljava/lang/String;
-
-    move-result-object v2
-
-    iget-object v3, p0, Lcom/dsemu/drastic/LoadingActivity;->b:Landroid/widget/TextView;
-
-    invoke-virtual {v3, v2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
-
-    const-wide/16 v6, 0x96
-
-    const/4 v4, 0x6
-
-    if-ne v0, v4, :cond_next
-
-    const-wide/16 v6, 0x1f4
-
-    goto :cond_next
-
-    :cond_sub
-    const/16 v1, 0x14
-
-    if-ge v0, v1, :cond_done
-
-    const-string v2, "Carregando..."
-
-    add-int/lit8 v3, v0, -0x6
-
-    const/4 v4, 0x0
-
-    invoke-virtual {v2, v4, v3}, Ljava/lang/String;->substring(II)Ljava/lang/String;
-
-    move-result-object v2
-
-    iget-object v3, p0, Lcom/dsemu/drastic/LoadingActivity;->c:Landroid/widget/TextView;
-
-    invoke-virtual {v3, v2}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
-
-    const-wide/16 v6, 0x78
-
-    const/16 v4, 0x13
-
-    if-ne v0, v4, :cond_next
-
-    const-wide/16 v6, 0x2bc
-
-    :cond_next
-    add-int/lit8 v0, v0, 0x1
+    const/4 v0, 0x1
 
     iput v0, p0, Lcom/dsemu/drastic/LoadingActivity;->d:I
 
@@ -321,7 +286,9 @@
 
     iget-object v3, p0, Lcom/dsemu/drastic/LoadingActivity;->e:Ljava/lang/Runnable;
 
-    invoke-virtual {v2, v3, v6, v7}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+    const-wide/16 v0, 0x2bc
+
+    invoke-virtual {v2, v3, v0, v1}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
 
     return-void
 
