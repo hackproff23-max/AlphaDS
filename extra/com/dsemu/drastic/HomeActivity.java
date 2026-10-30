@@ -1,6 +1,9 @@
 package com.dsemu.drastic;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.DatePickerDialog;
+import android.app.TimePickerDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -38,6 +41,7 @@ import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.CompoundButton;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridView;
 import android.widget.HorizontalScrollView;
@@ -54,6 +58,7 @@ import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -314,7 +319,11 @@ public class HomeActivity extends Activity {
         // branco: controle
         dock.addView(slot(IconView.PAD, 0xFFFFFFFF, 0xFF3A3A3C, soon("Controle")));
         // cinza: configuracoes
-        dock.addView(slot(IconView.GEAR, 0xFF3A3A3C, 0xFFFFFFFF, soon("Configuracoes")));
+        dock.addView(slot(IconView.GEAR, 0xFF3A3A3C, 0xFFFFFFFF, new View.OnClickListener() {
+            public void onClick(View v) {
+                showSettingsMenu();
+            }
+        }));
         return dock;
     }
 
@@ -2110,6 +2119,505 @@ public class HomeActivity extends Activity {
 
     private Switch swFsSafe, swThreaded, swHires, swBit16, swLowres, swEdge, swSleep, swFix,
             swFps, swFpsT;
+
+    // ---------- configuracoes gerais (botao engrenagem) ----------
+
+    private static final String[] SET_LANG_LABELS = {
+            "Japones", "Ingles", "Frances", "Alemao", "Italiano", "Espanhol"};
+    private static final String[] SET_MONTH_LABELS = {
+            "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"};
+    private static final String[] SET_ONOFF = {"Desligado", "Ligado"};
+    private static final String[] SET_FFWD_LABELS = {"2x", "3x", "4x"};
+    private static final String[] SET_STICK_LABELS = {"Automatico", "Esquerdo", "Direito"};
+
+    /** Switch que avisa quando o botao "Padrao" precisa voltar o valor inicial. */
+    private Switch setSwitch(final boolean[] st, final int def, final List<Runnable> resets,
+                             final Runnable onChange) {
+        final Switch sw = vidSwitchNew(st, onChange);
+        resets.add(new Runnable() {
+            public void run() {
+                st[0] = def != 0;
+                sw.setChecked(def != 0);
+            }
+        });
+        return sw;
+    }
+
+    /** Linha com rotulo + switch ja ligada ao reset. */
+    private LinearLayout setSwitchRow(String label, boolean[] st, int def,
+                                      List<Runnable> resets, Runnable onChange) {
+        return vidSwitch(label, setSwitch(st, def, resets, onChange));
+    }
+
+    /** Slider (0..max) gravando em st[0]; adiciona o reset automaticamente. */
+    private LinearLayout setSeekRow(String label, final int[] st, final int def, int max,
+                                    final List<Runnable> resets, final Runnable onChange) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        final TextView val = menuValue();
+        val.setText(String.valueOf(st[0]));
+        box.addView(vidRow(label, val), new LinearLayout.LayoutParams(-1, -2));
+        SeekBar sb = new SeekBar(this);
+        sb.setMax(max);
+        sb.setProgress(st[0]);
+        sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int pr, boolean fromUser) {
+                st[0] = pr;
+                val.setText(String.valueOf(pr));
+                onChange.run();
+            }
+
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            public void onStopTrackingTouch(SeekBar s) {
+            }
+        });
+        box.addView(sb, new LinearLayout.LayoutParams(-1, -2));
+        resets.add(new Runnable() {
+            public void run() {
+                st[0] = def;
+                sb.setProgress(def);
+                val.setText(String.valueOf(def));
+            }
+        });
+        return box;
+    }
+
+    /** Linha de ciclo com reset automatico. */
+    private LinearLayout setCycleRow(String label, final String[] labels, final int[] values,
+                                     final int[] cur, final int def, final List<Runnable> refreshers,
+                                     final List<Runnable> resets, final Runnable onChange) {
+        LinearLayout row = vidCycle(label, labels, values, cur, refreshers, onChange);
+        resets.add(new Runnable() {
+            public void run() {
+                cur[0] = def;
+                for (int i = 0; i < refreshers.size(); i++) {
+                    refreshers.get(i).run();
+                }
+            }
+        });
+        return row;
+    }
+
+    /** Abre o menu completo de configuracoes do emulador (botao engrenagem).
+     *  Escreve direto nas preferencias nativas (_Dra$t1c_Pref$_); o emulador
+     *  le tudo de novo ao abrir o proximo jogo. */
+    private void showSettingsMenu() {
+        final SharedPreferences p = draPrefs();
+        final List<Runnable> refreshers = new ArrayList<Runnable>();
+        final List<Runnable> resets = new ArrayList<Runnable>();
+
+        // ===== estado (valores atuais) =====
+        // som
+        final boolean[] snd = new boolean[]{p.getBoolean("_SoundEnabled", true)};
+        final int[] vol = new int[]{clamp(p.getInt("_Volume", 10), 0, 15)};
+        final boolean[] mic = new boolean[]{p.getBoolean("_MicEnabled", false)};
+        // emulacao
+        final boolean[] cheats = new boolean[]{p.getBoolean("_CheatsEnabled", false)};
+        final int[] autosave = new int[]{clamp(p.getInt("_AutosaveMode", 1), 0, 1)};
+        final boolean[] rawSav = new boolean[]{p.getBoolean("_RawSavFormat", false)};
+        final boolean[] backupSav = new boolean[]{p.getBoolean("_BackupInSavestates", false)};
+        final boolean[] rtcSys = new boolean[]{p.getBoolean("_RtcSystemTime", false)};
+        final boolean[] clockEn = new boolean[]{p.getBoolean("_CustomClockEnable", false)};
+        final long clockVal = p.getLong("_CustomClock", 0L);
+        final boolean[] zipCache = new boolean[]{p.getBoolean("_ZipCaching", false)};
+        final boolean[] preload = new boolean[]{p.getBoolean("_PreloadRoms", false)};
+        final boolean[] autoTrim = new boolean[]{p.getBoolean("_AutoTrim", false)};
+        final boolean[] lua = new boolean[]{p.getBoolean("_LuaEnabled", false)};
+        final boolean[] ignoreGc = new boolean[]{p.getBoolean("_IgnoreGamecardLimit", false)};
+        final boolean[] lowMem = new boolean[]{p.getBoolean("_LowMemWarningDisabled", false)};
+        // jogabilidade
+        final boolean[] ffwd = new boolean[]{p.getBoolean("_FastForwardToggle", false)};
+        final int[] ffwdSpd = new int[]{clamp(p.getInt("_FfwdSpeed", 2), 1, 3)};
+        final boolean[] ffwdInd = new boolean[]{p.getBoolean("_ShowFfwdIndicator", false)};
+        final int[] autofire = new int[]{clamp(p.getInt("_AutoFireSpeed", 2), 1, 5)};
+        final int[] stickMode = new int[]{clamp(p.getInt("_AnalogStickMode", -1), -1, 1)};
+        final boolean[] analogTouch = new boolean[]{p.getBoolean("_AnalogTouch", false)};
+        final boolean[] analogTrig = new boolean[]{p.getBoolean("_AnalogTriggers", false)};
+        final boolean[] touchThrough = new boolean[]{p.getBoolean("_TouchThrough", false)};
+        final boolean[] noBack = new boolean[]{p.getBoolean("_DisableBackButton", false)};
+        final boolean[] noMenu = new boolean[]{p.getBoolean("_DisableMenuButton", false)};
+        final boolean[] autoResume = new boolean[]{p.getBoolean("_ShortcutAutoResume", false)};
+        // firmware
+        final String[] nick = new String[]{p.getString("_FirmwareNick", "Dr Drastic")};
+        final int[] lang = new int[]{clamp(p.getInt("_FirmwareLanguage", 1), 0, 5)};
+        final int[] bdDay = new int[]{clamp(p.getInt("_FirmwareBdayDay", 10), 1, 31)};
+        final int[] bdMon = new int[]{clamp(p.getInt("_FirmwareBdayMonth", 6), 1, 12)};
+
+        // ===== persistencia =====
+        final Runnable persist = new Runnable() {
+            public void run() {
+                SharedPreferences.Editor e = p.edit();
+                e.putBoolean("_SoundEnabled", snd[0]);
+                e.putInt("_Volume", vol[0]);
+                e.putBoolean("_MicEnabled", mic[0]);
+                e.putBoolean("_CheatsEnabled", cheats[0]);
+                e.putInt("_AutosaveMode", autosave[0]);
+                e.putBoolean("_RawSavFormat", rawSav[0]);
+                e.putBoolean("_BackupInSavestates", backupSav[0]);
+                e.putBoolean("_RtcSystemTime", rtcSys[0]);
+                e.putBoolean("_CustomClockEnable", clockEn[0]);
+                e.putBoolean("_ZipCaching", zipCache[0]);
+                e.putBoolean("_PreloadRoms", preload[0]);
+                e.putBoolean("_AutoTrim", autoTrim[0]);
+                e.putBoolean("_LuaEnabled", lua[0]);
+                e.putBoolean("_IgnoreGamecardLimit", ignoreGc[0]);
+                e.putBoolean("_LowMemWarningDisabled", lowMem[0]);
+                e.putBoolean("_FastForwardToggle", ffwd[0]);
+                e.putInt("_FfwdSpeed", ffwdSpd[0]);
+                e.putBoolean("_ShowFfwdIndicator", ffwdInd[0]);
+                e.putInt("_AutoFireSpeed", autofire[0]);
+                e.putInt("_AnalogStickMode", stickMode[0]);
+                e.putBoolean("_AnalogTouch", analogTouch[0]);
+                e.putBoolean("_AnalogTriggers", analogTrig[0]);
+                e.putBoolean("_TouchThrough", touchThrough[0]);
+                e.putBoolean("_DisableBackButton", noBack[0]);
+                e.putBoolean("_DisableMenuButton", noMenu[0]);
+                e.putBoolean("_ShortcutAutoResume", autoResume[0]);
+                e.putString("_FirmwareNick", nick[0]);
+                e.putInt("_FirmwareLanguage", lang[0]);
+                e.putInt("_FirmwareBdayDay", bdDay[0]);
+                e.putInt("_FirmwareBdayMonth", bdMon[0]);
+                e.apply();
+            }
+        };
+
+        // ===== painel =====
+        final FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x66000000);
+        overlay.setClickable(true);
+        final Runnable closer = new Runnable() {
+            public void run() {
+                rootFrame.removeView(overlay);
+            }
+        };
+        overlay.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+
+        ScrollView panel = new ScrollView(this);
+        panel.setVerticalScrollBarEnabled(false);
+        panel.setFillViewport(true);
+        panel.setClickable(true);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(0xFFF7F7F9);
+        pbg.setCornerRadii(new float[]{dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0});
+        panel.setBackgroundDrawable(pbg);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(12), dp(16), dp(20));
+        panel.addView(content, new FrameLayout.LayoutParams(-1, -2));
+
+        // cabecalho
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(this);
+        title.setText("Configuracoes");
+        title.setTextColor(0xFF222222);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        title.setTypeface(bebas());
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView x = new TextView(this);
+        x.setText("X");
+        x.setTextColor(0xFF666666);
+        x.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        x.setTypeface(bebas());
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(dp(14), dp(6), dp(14), dp(6));
+        GradientDrawable xbg = new GradientDrawable();
+        xbg.setColor(0xFFE8E8EC);
+        xbg.setCornerRadius(dp(16));
+        x.setBackgroundDrawable(xbg);
+        x.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+            }
+        });
+        head.addView(x, new LinearLayout.LayoutParams(-2, -2));
+        content.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView hint0 = vidHint("Vale a partir do proximo jogo aberto. Toque numa opcao de "
+                + "valor para mudar; sao as mesmas opcoes do menu interno do emulador.");
+        hint0.setPadding(0, dp(6), 0, 0);
+        content.addView(hint0, new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== som =====
+        content.addView(vidSection("Som"), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Ligar o som", snd, 1, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSeekRow("Volume", vol, 10, 15, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Microfone do DS", mic, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Microfone: jogos que pedem para assoprar/falar recebem "
+                + "o som do microfone do aparelho."), new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== emulacao =====
+        content.addView(vidSection("Emulacao"), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Trapacas (cheats)", cheats, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Liga os codes adicionados no menu interno do emulador "
+                + "(action replay)."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setCycleRow("Salvar a bateria ao sair (autosave)", SET_ONOFF,
+                new int[]{0, 1}, autosave, 1, refreshers, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Gravar saves em formato cru (.sav)", rawSav, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Ligado: grava .sav padrao (funciona em outros emuladores e "
+                + "flashcards). Desligado: usa o formato proprio (.dsv), que guarda mais "
+                + "informacoes."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Guardar a bateria dentro dos savestates", backupSav, 0,
+                resets, persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Usar o relogio do sistema", rtcSys, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        TextView btnClock = pillButton("Definir data e hora do DS", 0xFF3A3A3C, 0xFFFFFFFF);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2);
+        clp.topMargin = dp(8);
+        content.addView(btnClock, clp);
+        btnClock.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                Calendar c = Calendar.getInstance();
+                if (clockVal > 0L) {
+                    c.setTimeInMillis(clockVal);
+                }
+                new DatePickerDialog(HomeActivity.this, null,
+                        c.get(Calendar.YEAR), c.get(Calendar.MONTH),
+                        c.get(Calendar.DAY_OF_MONTH)) {
+                    public void onDateSet(android.widget.DatePicker dp2, int y, int m, int day) {
+                        new TimePickerDialog(HomeActivity.this,
+                                new TimePickerDialog.OnTimeSetListener() {
+                                    public void onTimeSet(android.widget.TimePicker tp, int hh, int mm) {
+                                        Calendar c2 = Calendar.getInstance();
+                                        c2.set(y, m, day, hh, mm, 0);
+                                        p.edit().putLong("_CustomClock",
+                                                c2.getTimeInMillis()).commit();
+                                    }
+                                }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true)
+                                .show();
+                    }
+                }.show();
+                p.edit().putBoolean("_CustomClockEnable", true).commit();
+            }
+        });
+        content.addView(vidHint("Define a data/hora que o jogo enxerga (util para eventos "
+                + "especiais de jogos como Pokemon). Ao usar, o relogio personalizado e "
+                + "ligado automaticamente."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Cache para ROMs zipadas", zipCache, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Pre-carregar a lista de jogos", preload, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Cortar bordas pretas automaticamente", autoTrim, 0,
+                resets, persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Suporte a scripts Lua", lua, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Ignorar limite de gamecard", ignoreGc, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Nao avisar sobre pouca memoria", lowMem, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== jogabilidade =====
+        content.addView(vidSection("Jogabilidade"), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Avanco rapido (fast-forward)", ffwd, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setCycleRow("Velocidade do avanco rapido", SET_FFWD_LABELS,
+                new int[]{1, 2, 3}, ffwdSpd, 2, refreshers, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Mostrar indicador de avanco", ffwdInd, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setCycleRow("Velocidade do auto-fire",
+                new String[]{"1", "2", "3", "4", "5"}, new int[]{1, 2, 3, 4, 5}, autofire, 2,
+                refreshers, resets, persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Auto-fire: repeticao automatica do botao mapeado no menu "
+                + "interno; 1 = mais rapida."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setCycleRow("Analogico virtual", SET_STICK_LABELS, new int[]{-1, 0, 1},
+                stickMode, -1, refreshers, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Escolhe qual lado da tela o analogico virtual controla; "
+                + "Automatico decide sozinho pelo jogo."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Analogico move o toque na tela", analogTouch, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Gatilhos do analogico", analogTrig, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Toque atravessa os controles", touchThrough, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("Permite tocar a tela de baixo atraves da area dos botoes "
+                + "virtuais."), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Desativar botao voltar", noBack, 0, resets, persist),
+                new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Desativar botao de menu do pad", noMenu, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setSwitchRow("Atalho continua de onde parou", autoResume, 0, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== firmware (perfil do DS) =====
+        content.addView(vidSection("Firmware (perfil do DS)"), new LinearLayout.LayoutParams(-1, -2));
+        final TextView valNick = menuValue();
+        valNick.setText(nick[0]);
+        LinearLayout rowNick = vidRow("Apelido no jogo", valNick);
+        rowNick.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                final EditText et = new EditText(HomeActivity.this);
+                et.setText(nick[0]);
+                et.setMaxLines(1);
+                et.setTypeface(bebas());
+                new AlertDialog.Builder(HomeActivity.this)
+                        .setTitle("Apelido no jogo (max. 10 letras)")
+                        .setView(et)
+                        .setPositiveButton("OK", new android.content.DialogInterface.OnClickListener() {
+                            public void onClick(android.content.DialogInterface dlg, int w) {
+                                String s = et.getText().toString().trim();
+                                if (s.length() > 10) {
+                                    s = s.substring(0, 10);
+                                }
+                                if (s.length() > 0) {
+                                    nick[0] = s;
+                                    valNick.setText(s);
+                                    persist.run();
+                                }
+                            }
+                        })
+                        .setNegativeButton("Cancelar", null)
+                        .show();
+            }
+        });
+        content.addView(rowNick, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setCycleRow("Idioma", SET_LANG_LABELS, new int[]{0, 1, 2, 3, 4, 5},
+                lang, 1, refreshers, resets, persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setCycleRow("Mes de aniversario", SET_MONTH_LABELS,
+                new int[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, bdMon, 6, refreshers, resets,
+                persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(setCycleRow("Dia do aniversario",
+                new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+                        "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23",
+                        "24", "25", "26", "27", "28", "29", "30", "31"},
+                new int[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                        20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31},
+                bdDay, 10, refreshers, resets, persist), new LinearLayout.LayoutParams(-1, -2));
+        content.addView(vidHint("O perfil aparece nos jogos que leem o firmware do DS "
+                + "(nome do treinador, idioma e aniversario)."), new LinearLayout.LayoutParams(-1, -2));
+
+        // ===== atalhos para os outros menus =====
+        content.addView(vidSection("Outros menus"), new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout linkRow = new LinearLayout(this);
+        linkRow.setOrientation(LinearLayout.HORIZONTAL);
+        TextView btnVid = pillButton("Opcoes de video", 0xFF2E9E3E, 0xFFFFFFFF);
+        TextView btnShd = pillButton("Shaders", 0xFF1565C0, 0xFFFFFFFF);
+        TextView btnTxt = pillButton("Texto", 0xFFE53935, 0xFFFFFFFF);
+        LinearLayout.LayoutParams l1 = new LinearLayout.LayoutParams(0, -2, 1f);
+        l1.rightMargin = dp(6);
+        linkRow.addView(btnVid, l1);
+        LinearLayout.LayoutParams l2 = new LinearLayout.LayoutParams(0, -2, 1f);
+        l2.rightMargin = dp(6);
+        linkRow.addView(btnShd, l2);
+        linkRow.addView(btnTxt, new LinearLayout.LayoutParams(0, -2, 1f));
+        content.addView(linkRow, cwlp(10));
+        btnVid.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+                showVideoMenu();
+            }
+        });
+        btnShd.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+                showShaderMenu();
+            }
+        });
+        btnTxt.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+                showTextMenu();
+            }
+        });
+
+        LinearLayout linkRow2 = new LinearLayout(this);
+        linkRow2.setOrientation(LinearLayout.HORIZONTAL);
+        TextView btnEdS = pillButton("Editar telas", 0xFF3A3A3C, 0xFFFFFFFF);
+        TextView btnEdC = pillButton("Editar controles", 0xFF3A3A3C, 0xFFFFFFFF);
+        LinearLayout.LayoutParams l3 = new LinearLayout.LayoutParams(0, -2, 1f);
+        l3.rightMargin = dp(6);
+        linkRow2.addView(btnEdS, l3);
+        linkRow2.addView(btnEdC, new LinearLayout.LayoutParams(0, -2, 1f));
+        content.addView(linkRow2, cwlp(8));
+        btnEdS.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+                showLayoutEditor(0);
+            }
+        });
+        btnEdC.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                closer.run();
+                showLayoutEditor(1);
+            }
+        });
+
+        // ===== rodape =====
+        LinearLayout btns = new LinearLayout(this);
+        btns.setOrientation(LinearLayout.HORIZONTAL);
+        TextView reset = pillButton("Padrao", 0xFFE8E8EC, 0xFF333338);
+        TextView closeBtn = pillButton("Fechar", 0xFF3A3A3C, 0xFFFFFFFF);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, -2, 1f);
+        rlp.rightMargin = dp(8);
+        btns.addView(reset, rlp);
+        btns.addView(closeBtn, new LinearLayout.LayoutParams(0, -2, 1f));
+        content.addView(btns, cwlp(18));
+
+        reset.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                snd[0] = true;
+                vol[0] = 10;
+                mic[0] = false;
+                cheats[0] = false;
+                autosave[0] = 1;
+                rawSav[0] = false;
+                backupSav[0] = false;
+                rtcSys[0] = false;
+                clockEn[0] = false;
+                zipCache[0] = false;
+                preload[0] = false;
+                autoTrim[0] = false;
+                lua[0] = false;
+                ignoreGc[0] = false;
+                lowMem[0] = false;
+                ffwd[0] = false;
+                ffwdSpd[0] = 2;
+                ffwdInd[0] = false;
+                autofire[0] = 2;
+                stickMode[0] = -1;
+                analogTouch[0] = false;
+                analogTrig[0] = false;
+                touchThrough[0] = false;
+                noBack[0] = false;
+                noMenu[0] = false;
+                autoResume[0] = false;
+                nick[0] = "Dr Drastic";
+                lang[0] = 1;
+                bdDay[0] = 10;
+                bdMon[0] = 6;
+                for (int i = resets.size() - 1; i >= 0; i--) {
+                    resets.get(i).run();
+                }
+                valNick.setText(nick[0]);
+                persist.run();
+            }
+        });
+        closeBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                persist.run();
+                closer.run();
+            }
+        });
+
+        overlay.addView(panel, new FrameLayout.LayoutParams(-1,
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.86f), Gravity.BOTTOM));
+        rootFrame.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+    }
 
     // ---------- editor de telas e controles ----------
 
