@@ -20,6 +20,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
@@ -28,6 +29,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.FrameLayout;
@@ -70,6 +72,13 @@ public class HomeActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams wlp = getWindow().getAttributes();
+            wlp.layoutInDisplayCutoutMode = 1; // SHORT_EDGES: desenha ate a borda, atras do recorte da camera
+            getWindow().setAttributes(wlp);
+        }
+        goImmersive();
         d = getResources().getDisplayMetrics().density;
         iconPx = dp(96);
         prefs = getSharedPreferences("alphads_home", MODE_PRIVATE);
@@ -77,10 +86,7 @@ public class HomeActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(0xFFECECF0);
-        int top = 0;
-        int rid = getResources().getIdentifier("status_bar_height", "dimen", "android");
-        if (rid > 0) top = getResources().getDimensionPixelSize(rid);
-        root.setPadding(0, top, 0, 0);
+        root.setPadding(0, dp(14), 0, 0);
 
         TextView title = new TextView(this);
         title.setText("AlphaDS");
@@ -123,6 +129,22 @@ public class HomeActivity extends Activity {
         setContentView(root);
     }
 
+    private void goImmersive() {
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) goImmersive();
+    }
+
     private LinearLayout.LayoutParams dockParams() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(dp(10), dp(4), dp(10), dp(12));
@@ -139,10 +161,10 @@ public class HomeActivity extends Activity {
         bg.setCornerRadius(dp(40));
         dock.setBackgroundDrawable(bg);
 
-        // inicio
+        // casinha: sair
         dock.addView(slot(IconView.HOME, 0xFFFFFFFF, 0xFF111111, new View.OnClickListener() {
             public void onClick(View v) {
-                grid.smoothScrollToPosition(0);
+                finish(); // casinha = sair do app
             }
         }));
         // vermelho: textos
