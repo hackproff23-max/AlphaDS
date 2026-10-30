@@ -2,6 +2,7 @@ package com.dsemu.drastic;
 
 import android.app.Activity;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -10,6 +11,7 @@ import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
@@ -131,34 +133,35 @@ public class HomeActivity extends Activity {
         LinearLayout dock = new LinearLayout(this);
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
-        dock.setPadding(dp(8), dp(8), dp(8), dp(8));
+        dock.setPadding(dp(6), dp(8), dp(6), dp(8));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(0xEEF7F7F9);
         bg.setCornerRadius(dp(40));
         dock.setBackgroundDrawable(bg);
 
         // inicio
-        dock.addView(dockButton("\u2302", 0xFFFFFFFF, 0xFF111111, new View.OnClickListener() {
+        dock.addView(slot(IconView.HOME, 0xFFFFFFFF, 0xFF111111, new View.OnClickListener() {
             public void onClick(View v) {
                 grid.smoothScrollToPosition(0);
             }
         }));
         // vermelho: textos
-        dock.addView(dockButton("Aa", 0xFFE53935, 0xFFFFFFFF, soon("Opcoes de texto: tamanho, fonte, contorno, cor de fundo, sombra e background")));
+        dock.addView(slot(IconView.TEXT, 0xFFE53935, 0xFFFFFFFF,
+                soon("Opcoes de texto: tamanho, fonte, contorno, cor de fundo, sombra e background")));
         // amarelo: escolher pasta com todos os jogos
-        dock.addView(dockButton("\uD83D\uDCC1", 0xFFFFA000, 0xFFFFFFFF, new View.OnClickListener() {
+        dock.addView(slot(IconView.FOLDER, 0xFFFFA000, 0xFFFFFFFF, new View.OnClickListener() {
             public void onClick(View v) {
                 pickFolder();
             }
         }));
         // azul: shaders
-        dock.addView(dockButton("\u2726", 0xFF1565C0, 0xFFFFFFFF, soon("Shaders")));
+        dock.addView(slot(IconView.SHADER, 0xFF1565C0, 0xFFFFFFFF, soon("Shaders")));
         // verde: video
-        dock.addView(dockButton("\u25A3", 0xFF2E9E3E, 0xFFFFFFFF, soon("Opcoes de video")));
+        dock.addView(slot(IconView.VIDEO, 0xFF2E9E3E, 0xFFFFFFFF, soon("Opcoes de video")));
         // branco: controle
-        dock.addView(dockButton("\uD83C\uDFAE", 0xFFFFFFFF, 0xFF111111, soon("Controle")));
+        dock.addView(slot(IconView.PAD, 0xFFFFFFFF, 0xFF3A3A3C, soon("Controle")));
         // cinza: configuracoes
-        dock.addView(dockButton("\u2699", 0xFF3A3A3C, 0xFFFFFFFF, soon("Configuracoes")));
+        dock.addView(slot(IconView.GEAR, 0xFF3A3A3C, 0xFFFFFFFF, soon("Configuracoes")));
         return dock;
     }
 
@@ -170,23 +173,15 @@ public class HomeActivity extends Activity {
         };
     }
 
-    private View dockButton(String glyph, int color, int glyphColor, View.OnClickListener l) {
-        TextView t = new TextView(this);
-        t.setText(glyph);
-        t.setTextColor(glyphColor);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        t.setGravity(Gravity.CENTER);
-        GradientDrawable g = new GradientDrawable();
-        g.setShape(GradientDrawable.OVAL);
-        g.setColor(color);
-        t.setBackgroundDrawable(g);
-        t.setOnClickListener(l);
-        pressScale(t);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
-        lp.setMargins(dp(4), 0, dp(4), 0);
-        // largura = altura para ficar redondo
-        t.setLayoutParams(lp);
-        return t;
+    /** Espaco igual para cada botao; o botao em si e sempre um circulo perfeito. */
+    private View slot(int type, int bg, int fg, View.OnClickListener l) {
+        FrameLayout f = new FrameLayout(this);
+        f.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 1f));
+        IconView v = new IconView(this, type, bg, fg);
+        v.setOnClickListener(l);
+        pressScale(v);
+        f.addView(v, new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.CENTER));
+        return f;
     }
 
     private void pressScale(View v) {
@@ -504,5 +499,137 @@ public class HomeActivity extends Activity {
         i.setComponent(new ComponentName(this, "com.dsemu.drastic.LoadingActivity"));
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivity(i);
+    }
+
+    // ---------- icones simples desenhados em codigo ----------
+
+    private static class IconView extends View {
+        static final int HOME = 0, TEXT = 1, FOLDER = 2, SHADER = 3, VIDEO = 4, PAD = 5, GEAR = 6;
+        private final int type, bg, fg;
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+        private final RectF r = new RectF();
+
+        IconView(Context c, int type, int bg, int fg) {
+            super(c);
+            this.type = type;
+            this.bg = bg;
+            this.fg = fg;
+        }
+
+        private void star(float cx, float cy, float big, float small) {
+            for (int i = 0; i < 8; i++) {
+                double a = Math.toRadians(-90 + i * 45);
+                float rad = (i % 2 == 0) ? big : small;
+                float x = cx + (float) Math.cos(a) * rad;
+                float y = cy + (float) Math.sin(a) * rad;
+                if (i == 0) path.moveTo(x, y);
+                else path.lineTo(x, y);
+            }
+            path.close();
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float w = getWidth(), h = getHeight();
+            float s = Math.min(w, h);
+            p.setTypeface(Typeface.DEFAULT);
+            p.setStyle(Paint.Style.FILL);
+            p.setStrokeCap(Paint.Cap.BUTT);
+            p.setColor(bg);
+            cv.drawCircle(w / 2f, h / 2f, s / 2f, p);
+
+            cv.save();
+            cv.translate((w - s) / 2f, (h - s) / 2f);
+            cv.scale(s / 100f, s / 100f);
+            path.reset();
+            p.setColor(fg);
+
+            switch (type) {
+                case HOME:
+                    path.moveTo(50, 26);
+                    path.lineTo(75, 48);
+                    path.lineTo(67, 48);
+                    path.lineTo(67, 73);
+                    path.lineTo(55, 73);
+                    path.lineTo(55, 58);
+                    path.lineTo(45, 58);
+                    path.lineTo(45, 73);
+                    path.lineTo(33, 73);
+                    path.lineTo(33, 48);
+                    path.lineTo(25, 48);
+                    path.close();
+                    cv.drawPath(path, p);
+                    break;
+                case TEXT:
+                    p.setTypeface(Typeface.DEFAULT_BOLD);
+                    p.setTextSize(38);
+                    p.setTextAlign(Paint.Align.CENTER);
+                    cv.drawText("Aa", 50, 50 - (p.ascent() + p.descent()) / 2f, p);
+                    break;
+                case FOLDER:
+                    r.set(25, 29, 47, 43);
+                    cv.drawRoundRect(r, 4, 4, p);
+                    r.set(25, 36, 75, 70);
+                    cv.drawRoundRect(r, 6, 6, p);
+                    p.setColor(bg);
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(3);
+                    cv.drawLine(25, 46, 75, 46, p);
+                    break;
+                case SHADER:
+                    star(47, 53, 25, 6);
+                    cv.drawPath(path, p);
+                    path.reset();
+                    star(71, 29, 10, 2.5f);
+                    cv.drawPath(path, p);
+                    path.reset();
+                    star(28, 29, 6, 1.5f);
+                    cv.drawPath(path, p);
+                    break;
+                case VIDEO:
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(6);
+                    r.set(26, 30, 74, 62);
+                    cv.drawRoundRect(r, 8, 8, p);
+                    p.setStrokeCap(Paint.Cap.ROUND);
+                    cv.drawLine(40, 72, 60, 72, p);
+                    p.setStyle(Paint.Style.FILL);
+                    path.moveTo(45, 38);
+                    path.lineTo(45, 54);
+                    path.lineTo(59, 46);
+                    path.close();
+                    cv.drawPath(path, p);
+                    break;
+                case PAD:
+                    r.set(21, 33, 79, 62);
+                    cv.drawRoundRect(r, 14, 14, p);
+                    cv.drawCircle(32, 59, 10, p);
+                    cv.drawCircle(68, 59, 10, p);
+                    p.setColor(bg);
+                    r.set(30, 44, 42, 50);
+                    cv.drawRect(r, p);
+                    r.set(33, 41, 39, 53);
+                    cv.drawRect(r, p);
+                    cv.drawCircle(62, 43, 3.5f, p);
+                    cv.drawCircle(69, 50, 3.5f, p);
+                    break;
+                case GEAR:
+                    for (int i = 0; i < 8; i++) {
+                        cv.save();
+                        cv.rotate(i * 45, 50, 50);
+                        r.set(45, 23, 55, 37);
+                        cv.drawRoundRect(r, 2, 2, p);
+                        cv.restore();
+                    }
+                    cv.drawCircle(50, 50, 20, p);
+                    p.setColor(bg);
+                    cv.drawCircle(50, 50, 8, p);
+                    break;
+                default:
+                    break;
+            }
+            cv.restore();
+        }
     }
 }
